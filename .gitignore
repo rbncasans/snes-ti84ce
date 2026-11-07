@@ -10,3 +10,5 @@ __pycache__/
 *.smc
 *.fig
 *.swc
+tests/test_ppu
+tests/out/
