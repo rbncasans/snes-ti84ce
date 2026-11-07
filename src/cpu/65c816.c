@@ -201,24 +201,37 @@ static void am_dp(void)   { ea = dp_addr(false, 0); ea_bank0 = true; }
 static void am_dpx(void)  { ea = dp_addr(true, c->x);     ea_bank0 = true; }
 static void am_dpy(void)  { ea = dp_addr(true, c->y);     ea_bank0 = true; }
 
+/* Puntero de 16 bits en página directa. En emulación con DL = 0 el byte
+ * alto se lee dentro de la misma página (como en el 6502). */
+static uint16_t rd16_dpptr(uint16_t p)
+{
+    uint16_t lo = rd8(p);
+    uint16_t hi_addr;
+    if (c->e && (c->d & 0xFF) == 0)
+        hi_addr = (p & 0xFF00) | ((p + 1) & 0xFF);
+    else
+        hi_addr = (uint16_t)(p + 1);
+    return lo | ((uint16_t)rd8(hi_addr) << 8);
+}
+
 static void am_idp(void)  /* (dp) */
 {
     uint16_t p = dp_addr(false, 0);
-    ea = dbank() | rd16(p, true);
+    ea = dbank() | rd16_dpptr(p);
     ea_bank0 = false;
 }
 
 static void am_idpx(void) /* (dp,X) */
 {
     uint16_t p = dp_addr(true, c->x);
-    ea = dbank() | rd16(p, true);
+    ea = dbank() | rd16_dpptr(p);
     ea_bank0 = false;
 }
 
 static void am_idpy(void) /* (dp),Y */
 {
     uint16_t p = dp_addr(false, 0);
-    ea = ((dbank() | rd16(p, true)) + c->y) & 0xFFFFFF;
+    ea = ((dbank() | rd16_dpptr(p)) + c->y) & 0xFFFFFF;
     ea_bank0 = false;
 }
 
@@ -834,8 +847,8 @@ uint32_t cpu_step(cpu_t *cpu)
     case 0xAA: io(); set_x_reg(&c->x, c->a); break;               /* TAX */
     case 0xA8: io(); set_x_reg(&c->y, c->a); break;               /* TAY */
     case 0xBA: io(); set_x_reg(&c->x, c->s); break;               /* TSX */
-    case 0x9B: io(); set_x_reg(&c->x, c->y); break;               /* TXY */
-    case 0xBB: io(); set_x_reg(&c->y, c->x); break;               /* TYX */
+    case 0x9B: io(); set_x_reg(&c->y, c->x); break;               /* TXY */
+    case 0xBB: io(); set_x_reg(&c->x, c->y); break;               /* TYX */
     case 0x8A: io(); set_a(c->x); break;                          /* TXA */
     case 0x98: io(); set_a(c->y); break;                          /* TYA */
     case 0x9A:                                                    /* TXS */
