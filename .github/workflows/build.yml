@@ -1,0 +1,19 @@
+name: Compilar
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar CE C Toolchain
+        run: |
+          curl -sL https://github.com/CE-Programming/toolchain/releases/latest/download/CEdev-Linux.tar.gz | tar xz
+          echo "$PWD/CEdev/bin" >> $GITHUB_PATH
+      - name: Compilar
+        run: make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SNESCE
+          path: bin/*.8xp

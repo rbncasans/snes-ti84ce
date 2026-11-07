@@ -1,0 +1,9 @@
+bin/
+obj/
+*.8xp
+*.8xv
+# Nunca subir ROMs
+*.sfc
+*.smc
+*.fig
+*.swc
