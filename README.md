@@ -23,6 +23,14 @@ make clean
 
 Envía `bin/SNESCE.8xp` a la calculadora con TI Connect CE o TILP y ejecútalo desde el menú de programas (o con un shell como Cesium).
 
+## Convertir una ROM
+
+Abre `tools/rom-converter.html` en el navegador (funciona sin conexión, la ROM no
+sale de tu ordenador). Carga un `.sfc`/`.smc`: muestra la cabecera, el mapa de
+memoria y una estimación de qué partes son programa, gráficos y datos, y genera
+varias AppVars `.8xv` (índice, trozos de 32 KB y SRAM) para enviar a la
+calculadora. El formato está descrito en [docs/formato-appvars.md](docs/formato-appvars.md).
+
 ## Estructura
 
 ```
@@ -30,6 +38,8 @@ src/
   main.c        Punto de entrada: inicializa gráficos y el bucle principal
   cpu/65c816.c  Núcleo de la CPU 65C816 (pendiente)
   cpu/65c816.h
+tools/rom-converter.html  Conversor de ROMs a AppVars (HTML, en local)
+docs/formato-appvars.md   Formato de las AppVars de ROM
 makefile        Configuración del CE C Toolchain
 ```
 
