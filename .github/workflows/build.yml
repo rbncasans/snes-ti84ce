@@ -17,3 +17,10 @@ jobs:
         with:
           name: SNESCE
           path: bin/*.8xp
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests de la CPU en PC
+        run: make -C tests
