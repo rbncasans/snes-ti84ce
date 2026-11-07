@@ -2,6 +2,9 @@ bin/
 obj/
 *.8xp
 *.8xv
+tests/test_cpu
+tests/sst/libsst.so
+__pycache__/
 # Nunca subir ROMs
 *.sfc
 *.smc

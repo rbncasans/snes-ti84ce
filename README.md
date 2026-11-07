@@ -6,7 +6,12 @@ Emulador original de Super Nintendo (SNES) para la calculadora **TI-84 Plus CE /
 
 ## Estado
 
-🚧 Esqueleto inicial: el programa arranca, muestra una pantalla y espera una tecla. El núcleo de emulación (CPU 65C816, PPU, APU SPC700) está por hacer.
+🚧 En desarrollo.
+
+- ✅ **CPU 65C816**: intérprete completo (256 opcodes, modos 8/16 bits, modo emulación, aritmética decimal, NMI/IRQ/BRK/COP, WAI/STP, MVN/MVP). Verificado contra la batería [SingleStepTests](https://github.com/SingleStepTests/65816) (registros y RAM; los ciclos son aproximados).
+- ⏳ Mapa de memoria SNES, PPU, entrada. El audio (SPC700) probablemente se omitirá.
+
+Ahora mismo el programa de la calculadora ejecuta un pequeño autotest de la CPU (`src/demo_rom.h`, ensamblado a mano) y muestra los resultados.
 
 ## Requisitos
 
@@ -23,19 +28,32 @@ make clean
 
 Envía `bin/SNESCE.8xp` a la calculadora con TI Connect CE o TILP y ejecútalo desde el menú de programas (o con un shell como Cesium).
 
+## Tests en PC
+
+```sh
+make -C tests          # tests propios, rápidos, sin dependencias
+make -C tests sst      # batería SingleStepTests completa (descarga ~2 GB por partes)
+make -C tests sst OPS="a9 69"   # solo algunos opcodes
+```
+
 ## Estructura
 
 ```
 src/
-  main.c        Punto de entrada: inicializa gráficos y el bucle principal
-  cpu/65c816.c  Núcleo de la CPU 65C816 (pendiente)
+  main.c        Punto de entrada: ejecuta el autotest y muestra resultados
+  bus.h / bus.c Bus de memoria (provisional: RAM mínima + programa de autotest)
+  demo_rom.h    Programa de autotest de la CPU
+  cpu/65c816.c  Intérprete de la CPU 65C816
   cpu/65c816.h
+tests/
+  test_cpu.c    Tests de la CPU en PC
+  sst/          Ejecutor de la batería SingleStepTests
 makefile        Configuración del CE C Toolchain
 ```
 
 ## Hoja de ruta
 
-1. Núcleo CPU 65C816 con decodificador de opcodes.
+1. ~~Núcleo CPU 65C816~~ ✅
 2. Mapa de memoria (LoROM/HiROM) leyendo la ROM desde AppVars en Flash.
 3. PPU simplificada (modo 1, escalado 256×224 → 320×240).
 4. Entrada con `keypadc`.
