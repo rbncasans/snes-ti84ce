@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversor de ROMs SNES a AppVars</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #dde1e7;
+  --accent: #3b5bdb; --code: #e8590c; --gfx: #2f9e44; --data: #1c7ed6; --empty: #ced4da;
+  --warn-bg: #fff4e6; --warn: #a14a00; --ok: #2b8a3e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --panel: #1c2027; --text: #e6e9ee; --muted: #9aa3b2; --line: #2e343e;
+    --accent: #748ffc; --code: #ff922b; --gfx: #51cf66; --data: #4dabf7; --empty: #495057;
+    --warn-bg: #3a2a12; --warn: #ffc078; --ok: #69db7c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+p { margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
+#drop { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px; text-align: center; cursor: pointer; }
+#drop.over { border-color: var(--accent); }
+button, select, input[type=text] { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 16px; }
+.kv b { display: block; font-size: .78rem; color: var(--muted); font-weight: 500; }
+.kv span { font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+.warn { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; font-size: .85rem; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.t-code { background: var(--code); } .t-gfx { background: var(--gfx); } .t-data { background: var(--data); } .t-empty { background: var(--empty); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; }
+td.mono, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.bar { display: flex; width: 160px; height: 14px; border-radius: 3px; overflow: hidden; }
+.bar i { flex: 1; }
+.summary { display: flex; height: 22px; border-radius: 5px; overflow: hidden; margin: 8px 0; }
+.summary i { min-width: 1px; }
+#preview { image-rendering: pixelated; width: 512px; max-width: 100%; border: 1px solid var(--line); background: #000; }
+td select { padding: 2px 4px; }
+a.dl { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Conversor de ROMs SNES a AppVars</h1>
+  <p class="muted">Para el emulador <b>snes-ti84ce</b> de la TI-84 Plus CE. La ROM se procesa solo en tu navegador: no se sube a ningún sitio. Usa solo copias de juegos que poseas o ROMs homebrew.</p>
+
+  <div class="panel">
+    <div id="drop">
+      <p><b>Arrastra aquí una ROM</b> (.sfc, .smc) o pulsa para elegirla</p>
+      <p class="muted">Se quita sola la cabecera de copiadora de 512 bytes de los .smc</p>
+      <input id="file" type="file" accept=".sfc,.smc,.swc,.fig,.bin" hidden>
+    </div>
+  </div>
+
+  <div id="out" hidden>
+    <div class="panel">
+      <h2>Cabecera de la ROM</h2>
+      <div class="grid" id="info"></div>
+      <div id="warnings"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Mapa de memoria</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label>Tipo de mapa
+          <select id="mapSel">
+            <option value="0">LoROM</option>
+            <option value="1">HiROM</option>
+            <option value="2">ExHiROM</option>
+          </select>
+        </label>
+        <span class="muted" id="mapNote"></span>
+      </div>
+      <div class="tablewrap"><table id="memmap"></table></div>
+    </div>
+
+    <div class="panel">
+      <h2>Programa, gráficos y datos</h2>
+      <p class="muted">Estimación: el código se encuentra recorriendo el programa desde los vectores de reset/NMI/IRQ; los gráficos, por la estructura de los tiles; el resto son datos (tablas, audio o información comprimida). Puedes corregir el tipo de cada trozo; solo cambia el nombre de la variable.</p>
+      <div class="legend">
+        <span><i class="sw t-code"></i>Programa</span>
+        <span><i class="sw t-gfx"></i>Gráficos</span>
+        <span><i class="sw t-data"></i>Datos</span>
+        <span><i class="sw t-empty"></i>Vacío</span>
+      </div>
+      <div class="summary" id="summary"></div>
+      <p id="totals" class="muted"></p>
+      <div class="tablewrap"><table id="chunks"></table></div>
+    </div>
+
+    <div class="panel" id="prevPanel" hidden>
+      <h2 id="prevTitle">Vista previa</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label>Formato <select id="bppSel"><option value="4">4 bpp</option><option value="2">2 bpp</option><option value="8">8 bpp</option></select></label>
+        <span class="muted">Si es gráfico sin comprimir, se verán tiles reconocibles.</span>
+      </div>
+      <canvas id="preview" width="256" height="256"></canvas>
+    </div>
+
+    <div class="panel">
+      <h2>Generar variables</h2>
+      <div class="row">
+        <label>Prefijo <input id="prefix" type="text" maxlength="5" size="7" class="mono"></label>
+        <label><input id="mkSram" type="checkbox" checked> Crear AppVar de SRAM (partidas)</label>
+        <button class="primary" id="zipBtn">Descargar todo (.zip)</button>
+      </div>
+      <p class="muted" style="margin-top:8px">Envía todos los .8xv a la calculadora con TI Connect CE o TILP. Van marcados como archivados (a Flash). El formato está en <span class="mono">docs/formato-appvars.md</span>.</p>
+      <div id="files" class="tablewrap"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const CHUNK = 32768, BLOCK = 2048, BLOCKS = CHUNK / BLOCK;
+const T_EMPTY = 0, T_CODE = 1, T_GFX = 2, T_DATA = 3;
+const TYPE_LETTER = { 1: "C", 2: "G", 3: "D" };
+const TYPE_NAME = { 0: "Vacío", 1: "Programa", 2: "Gráficos", 3: "Datos" };
+const TYPE_CLASS = { 0: "t-empty", 1: "t-code", 2: "t-gfx", 3: "t-data" };
+const MAP_NAME = ["LoROM", "HiROM", "ExHiROM"];
+const HDR_BASE = [0x7FC0, 0xFFC0, 0x40FFC0];
+
+let S = null; // estado de la ROM cargada
+
+const $ = id => document.getElementById(id);
+const hex = (v, n) => v.toString(16).toUpperCase().padStart(n, "0");
+const kb = n => (n / 1024).toLocaleString("es-ES", { maximumFractionDigits: 1 }) + " KB";
+
+/* ---------- Carga ---------- */
+const drop = $("drop"), fileIn = $("file");
+drop.onclick = () => fileIn.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); };
+fileIn.onchange = () => { if (fileIn.files[0]) load(fileIn.files[0]); };
+
+async function load(file) {
+  let raw = new Uint8Array(await file.arrayBuffer());
+  let copier = false;
+  if (raw.length % 1024 === 512) { raw = raw.slice(512); copier = true; }
+  if (raw.length < 0x8000) { alert("El archivo es demasiado pequeño para ser una ROM de SNES."); return; }
+  if (raw.length > 0x600000) { alert("ROM de más de 6 MB: no es una ROM de SNES válida."); return; }
+  const scores = HDR_BASE.map((b, m) => scoreHeader(raw, b, m));
+  let map = scores.indexOf(Math.max(...scores));
+  S = { rom: raw, copier, fileName: file.name, scores };
+  $("mapSel").value = map;
+  $("mapNote").textContent = "Detectado automáticamente (puntuaciones: " + scores.map((s, i) => MAP_NAME[i] + " " + (s < 0 ? "–" : s)).join(", ") + ")";
+  analyze(map);
+  $("out").hidden = false;
+}
+$("mapSel").onchange = () => { if (S) analyze(+$("mapSel").value); };
+
+/* ---------- Cabecera ---------- */
+const u16 = (r, o) => r[o] | (r[o + 1] << 8);
+
+function scoreHeader(r, base, map) {
+  if (base + 0x40 > r.length) return -1;
+  let s = 0;
+  const chk = u16(r, base + 0x1E), cmp = u16(r, base + 0x1C);
+  if (((chk + cmp) & 0xFFFF) === 0xFFFF && chk !== 0) s += 4;
+  const mm = r[base + 0x15];
+  const want = [0x20, 0x21, 0x25][map];
+  if ((mm & 0xEF) === want) s += 4;
+  else if (map === 0 && ((mm & 0xEF) === 0x22 || (mm & 0xEF) === 0x23 || (mm & 0xEF) === 0x32)) s += 3;
+  else if ((mm & 0xE0) === 0x20) s += 1;
+  const rs = r[base + 0x17];
+  if (rs >= 0x07 && rs <= 0x0D) s += 1;
+  let printable = 0;
+  for (let i = 0; i < 21; i++) { const c = r[base + i]; if (c >= 0x20 && c < 0x7F) printable++; }
+  if (printable >= 19) s += 2;
+  const reset = u16(r, base + 0x3C);
+  if (reset >= 0x8000) {
+    s += 2;
+    const off = snesToOff(0, reset, map, r.length);
+    if (off >= 0 && [0x78, 0x18, 0x5C, 0x4C, 0xC2, 0xE2, 0x9C, 0xA9, 0x20, 0x22, 0x8D, 0x80, 0x82, 0xFB].includes(r[off])) s += 3;
+  }
+  return s;
+}
+
+function computeChecksum(r) {
+  // Suma de la ROM con el espejo que usa la SNES para tamaños que no son potencia de 2.
+  let p = 1; while (p * 2 <= r.length) p *= 2;
+  let sum = 0;
+  for (let i = 0; i < p; i++) sum += r[i];
+  const rest = r.length - p;
+  if (rest > 0) {
+    let part = 0; for (let i = p; i < r.length; i++) part += r[i];
+    sum += part * Math.round(p / rest);  // el resto se repite hasta ocupar otra potencia de 2
+  }
+  return sum & 0xFFFF;
+}
+
+const CHIPS = { 0x0: "DSP", 0x1: "Super FX (GSU)", 0x2: "OBC1", 0x3: "SA-1", 0x4: "S-DD1", 0x5: "S-RTC", 0xE: "Otro (Super Game Boy / Satellaview)", 0xF: "Personalizado (SPC7110, ST010/011, CX4…)" };
+const REGIONS = ["Japón", "Norteamérica", "Europa", "Suecia", "Finlandia", "Dinamarca", "Francia", "Holanda", "España", "Alemania", "Italia", "China", "Indonesia", "Corea", "Global", "Canadá", "Brasil", "Australia"];
+
+function parseHeader(r, map) {
+  const b = HDR_BASE[map];
+  const h = { base: b, ok: b + 0x40 <= r.length };
+  if (!h.ok) return h;
+  let t = ""; for (let i = 0; i < 21; i++) { const c = r[b + i]; t += (c >= 0x20 && c < 0x7F) ? String.fromCharCode(c) : " "; }
+  h.titleBytes = r.slice(b, b + 21);
+  h.title = t.trimEnd();
+  h.mapByte = r[b + 0x15]; h.chipByte = r[b + 0x16];
+  h.romSizeHdr = r[b + 0x17]; h.sramSizeHdr = r[b + 0x18];
+  h.region = r[b + 0x19]; h.version = r[b + 0x1B];
+  h.cmp = u16(r, b + 0x1C); h.chk = u16(r, b + 0x1E);
+  h.fast = (h.mapByte & 0x10) !== 0;
+  h.sram = (h.sramSizeHdr > 0 && h.sramSizeHdr <= 0x08) ? 1024 << h.sramSizeHdr : 0;
+  const chips = h.chipByte & 0x0F;
+  if (chips < 0x01 || chips === 0x03 || chips === 0x06) h.sram = 0;  // solo ROM / ROM+coprocesador sin RAM
+  h.coproc = (h.chipByte & 0x0F) >= 0x03 ? CHIPS[h.chipByte >> 4] || "desconocido" : null;
+  const v = o => u16(r, b + o);
+  h.vec = { nCOP: v(0x24), nBRK: v(0x26), nABORT: v(0x28), nNMI: v(0x2A), nIRQ: v(0x2E),
+            eCOP: v(0x34), eABORT: v(0x38), eNMI: v(0x3A), eRESET: v(0x3C), eIRQ: v(0x3E) };
+  h.realChk = computeChecksum(r);
+  h.chkOk = h.realChk === h.chk && ((h.chk + h.cmp) & 0xFFFF) === 0xFFFF;
+  return h;
+}
+
+/* ---------- Mapa de memoria ---------- */
+function snesToOff(bank, addr, map, size) {
+  const b = bank & 0x7F;
+  if (b === 0x7E || b === 0x7F) return -1;            // WRAM
+  let off;
+  if (map === 0) {
+    if (addr >= 0x8000 || (b >= 0x40 && b < 0x70)) off = (b << 15) | (addr & 0x7FFF);
+    else return -1;
+  } else {
+    if (b >= 0x40 || addr >= 0x8000) off = ((bank & 0x3F) << 16) | addr;
+    else return -1;
+    if (map === 2 && !(bank & 0x80)) off += 0x400000;
+  }
+  return off % size;
+}
+
+function chunkAddr(k, map) {
+  if (map === 0) return "$" + hex(k, 2) + ":8000–FFFF (y $" + hex(k | 0x80, 2) + ")";
+  const off = k * CHUNK;
+  let bank, lo = off & 0xFFFF;
+  if (map === 2 && off >= 0x400000) bank = 0x40 + ((off - 0x400000) >> 16);
+  else bank = 0xC0 + (off >> 16);
+  return "$" + hex(bank, 2) + ":" + hex(lo, 4) + "–" + hex(lo + 0x7FFF, 4);
+}
+
+/* ---------- Rastreo de código (desensamblado recursivo) ---------- */
+// Longitud de cada opcode: 1-4, m = depende de M, x = depende de X
+const LEN = ("222222221m113334" + "2222222213113334" + "324222221m113334" + "2222222213113334" +
+             "122232221m113334" + "2222322213114334" + "123222221m113334" + "2222222213113334" +
+             "223222221m113334" + "2222222213113334" + "x2x222221m113334" + "2222222213113334" +
+             "x22222221m113334" + "2222222213113334" + "x22222221m113334" + "2222322213113334");
+const BRANCH = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0]);
+const STOP = new Set([0x60, 0x6B, 0x40, 0x00, 0xDB, 0x6C, 0x7C, 0xDC, 0x80, 0x82, 0x4C, 0x5C]);
+
+function traceCode(r, map, vectors) {
+  const size = r.length;
+  const code = new Uint8Array(size);
+  const seen = new Set();
+  const work = [];
+  for (const [bank, pc] of vectors) if (pc >= 0x8000) work.push([bank, pc, 1, 1]);
+  let steps = 0;
+  const LIMIT = 3000000;
+  while (work.length && steps < LIMIT) {
+    let [bank, pc, m, x] = work.pop();
+    for (;;) {
+      if (++steps > LIMIT) break;
+      const off = snesToOff(bank, pc, map, size);
+      if (off < 0) break;
+      const key = off * 4 + m * 2 + x;
+      if (seen.has(key)) break;
+      seen.add(key);
+      const op = r[off];
+      const lc = LEN[op];
+      const len = lc === "m" ? (m ? 2 : 3) : lc === "x" ? (x ? 2 : 3) : +lc;
+      for (let i = 0; i < len && off + i < size; i++) code[off + i] = 1;
+      const a8 = r[(off + 1) % size], a16 = a8 | (r[(off + 2) % size] << 8), bk = r[(off + 3) % size];
+      const next = (pc + len) & 0xFFFF;
+      if (op === 0xC2) { if (a8 & 0x20) m = 0; if (a8 & 0x10) x = 0; }
+      else if (op === 0xE2) { if (a8 & 0x20) m = 1; if (a8 & 0x10) x = 1; }
+      if (BRANCH.has(op) || op === 0x80) work.push([bank, (next + ((a8 << 24) >> 24)) & 0xFFFF, m, x]);
+      else if (op === 0x82) work.push([bank, (next + ((a16 << 16) >> 16)) & 0xFFFF, m, x]);
+      else if (op === 0x20 || op === 0x4C) work.push([bank, a16, m, x]);
+      else if (op === 0x22 || op === 0x5C) work.push([bk, a16, m, x]);
+      if (STOP.has(op)) break;
+      pc = next;
+    }
+  }
+  return code;
+}
+
+/* ---------- Clasificación ---------- */
+const COMMON_OPS = new Set([0xA9, 0x8D, 0x85, 0xA5, 0xAD, 0x20, 0x22, 0x60, 0x6B, 0xC2, 0xE2, 0xF0, 0xD0, 0x80, 0x9C, 0x64,
+  0xC9, 0x29, 0x8F, 0xAF, 0xBD, 0xB9, 0x9D, 0x99, 0x18, 0x38, 0x69, 0xE9, 0x0A, 0x4A, 0xA2, 0xA0, 0xAA, 0xA8, 0x1A, 0x3A,
+  0xE8, 0xC8, 0xCA, 0x88, 0x90, 0xB0, 0x10, 0x30, 0x48, 0x68, 0xDA, 0xFA, 0x5A, 0x7A, 0x08, 0x28, 0x8B, 0xAB, 0xEB]);
+const POP = new Uint8Array(256).map((_, i) => { let c = 0, v = i; while (v) { c += v & 1; v >>= 1; } return c; });
+
+function classifyBlock(r, start, end, code) {
+  const first = r[start];
+  let uniform = true, traced = 0, common = 0, sim = 0, zero = 0;
+  const hist = new Uint32Array(256);
+  for (let i = start; i < end; i++) {
+    const v = r[i];
+    if (v !== first) uniform = false;
+    hist[v]++;
+    traced += code[i];
+    if (COMMON_OPS.has(v)) common++;
+    if (v === 0) zero++;
+    if (i + 2 < end) { const d = POP[v ^ r[i + 2]]; sim += d === 0 ? 1 : d <= 2 ? 0.5 : 0; }
+  }
+  const n = end - start;
+  if (uniform) return { type: T_EMPTY, fill: first };
+  let H = 0; for (let i = 0; i < 256; i++) if (hist[i]) { const p = hist[i] / n; H -= p * Math.log2(p); }
+  const tr = traced / n, cm = common / n, sm = sim / (n - 2);
+  let type;
+  if (tr >= 0.10) type = T_CODE;
+  else if (sm >= 0.42 && H < 7.0) type = T_GFX;
+  else if (cm >= 0.24 && H > 4.5 && H < 7.4 && sm < 0.42) type = T_CODE;
+  else type = T_DATA;
+  return { type, H, tr, sm, cm };
+}
+
+function analyze(map) {
+  const r = S.rom;
+  S.map = map;
+  const h = S.hdr = parseHeader(r, map);
+  const vectors = h.ok ? [h.vec.eRESET, h.vec.eNMI, h.vec.eIRQ, h.vec.nNMI, h.vec.nIRQ, h.vec.nBRK, h.vec.nCOP].map(v => [0, v]) : [];
+  const code = traceCode(r, map, vectors);
+  const n = Math.ceil(r.length / CHUNK);
+  S.chunks = [];
+  for (let k = 0; k < n; k++) {
+    const s0 = k * CHUNK, e0 = Math.min(r.length, s0 + CHUNK);
+    const blocks = [];
+    for (let s = s0; s < e0; s += BLOCK) blocks.push(classifyBlock(r, s, Math.min(e0, s + BLOCK), code));
+    const cnt = [0, 0, 0, 0];
+    blocks.forEach(b => cnt[b.type]++);
+    let type, fill = 0;
+    if (cnt[T_EMPTY] === blocks.length && blocks.every(b => b.fill === blocks[0].fill)) { type = T_EMPTY; fill = blocks[0].fill; }
+    else {
+      const nonEmpty = blocks.length - cnt[T_EMPTY] || 1;
+      if (cnt[T_CODE] / nonEmpty >= 0.3) type = T_CODE;
+      else type = cnt[T_GFX] >= cnt[T_DATA] ? T_GFX : T_DATA;
+    }
+    S.chunks.push({ k, start: s0, len: e0 - s0, blocks, type, auto: type, fill });
+  }
+  const codeBytes = code.reduce((a, b) => a + b, 0);
+  S.tracedBytes = codeBytes;
+  if (!$("prefix").dataset.user) $("prefix").value = makePrefix(h.title || S.fileName);
+  render();
+}
+
+function makePrefix(t) {
+  let p = (t || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+  if (!p) p = "ROM";
+  if (!/^[A-Z]/.test(p)) p = ("R" + p).slice(0, 5);
+  return p;
+}
+$("prefix").oninput = () => {
+  const el = $("prefix");
+  el.value = el.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+  el.dataset.user = "1";
+  if (S) renderFiles();
+};
+$("mkSram").onchange = () => S && renderFiles();
+
+/* ---------- Interfaz ---------- */
+function render() {
+  const h = S.hdr, r = S.rom;
+  const kv = (k, v) => `<div class="kv"><b>${k}</b><span>${v}</span></div>`;
+  let html = kv("Archivo", esc(S.fileName)) + kv("Tamaño", kb(r.length) + (S.copier ? " (quitada cabecera de 512 B)" : ""));
+  const warns = [];
+  if (h.ok) {
+    html += kv("Título", esc(h.title) || "—") +
+      kv("Mapa", MAP_NAME[S.map] + (h.fast ? " · FastROM" : " · SlowROM") + ` ($${hex(h.mapByte, 2)})`) +
+      kv("Chips ($FFD6)", "$" + hex(h.chipByte, 2) + (h.coproc ? " · " + esc(h.coproc) : "")) +
+      kv("SRAM", h.sram ? kb(h.sram) : "No tiene") +
+      kv("Región", REGIONS[h.region] || "$" + hex(h.region, 2)) +
+      kv("Checksum", "$" + hex(h.chk, 4) + (h.chkOk ? " ✔ correcto" : " ✘ calculado $" + hex(h.realChk, 4))) +
+      kv("Vector RESET", "$00:" + hex(h.vec.eRESET, 4)) +
+      kv("Vector NMI", "$00:" + hex(h.vec.nNMI, 4)) +
+      kv("Vector IRQ", "$00:" + hex(h.vec.nIRQ, 4));
+    if (h.coproc) warns.push(`El cartucho usa un coprocesador (${esc(h.coproc)}). Es muy probable que el emulador no pueda ejecutarlo.`);
+    if (!h.chkOk) warns.push("El checksum no coincide: la ROM puede estar modificada (hack, traducción) o el tipo de mapa no es el correcto.");
+    if (h.vec.eRESET < 0x8000) warns.push("El vector de reset no apunta a la ROM: revisa el tipo de mapa.");
+  } else warns.push("La ROM es demasiado pequeña para este tipo de mapa.");
+  $("info").innerHTML = html;
+
+  // Mapa de memoria
+  const m = S.map, rows = [];
+  const n = S.chunks.length;
+  if (m === 0) {
+    rows.push(["ROM", "$00-$7D:8000-FFFF, $80-$FF:8000-FFFF", `banco b → trozo b & $7F (${n} trozos de 32 KB)`]);
+    rows.push(["ROM (espejo)", "$40-$6F:0000-7FFF, $C0-$EF:0000-7FFF", "igual que $8000-FFFF"]);
+    if (h.sram) rows.push(["SRAM", "$70-$7D:0000-7FFF, $F0-$FF:0000-7FFF", kb(h.sram) + " → AppVar " + sramName()]);
+  } else {
+    rows.push(["ROM", m === 2 ? "$C0-$FF:0000-FFFF (primeros 4 MB), $40-$7D (resto)" : "$C0-$FF:0000-FFFF, $40-$7D:0000-FFFF", `banco b → trozos 2·(b & $3F) y +1 (${n} trozos de 32 KB)`]);
+    rows.push(["ROM (espejo)", "$00-$3F:8000-FFFF, $80-$BF:8000-FFFF", "mitad alta de cada banco de 64 KB"]);
+    if (h.sram) rows.push(["SRAM", "$20-$3F:6000-7FFF, $A0-$BF:6000-7FFF", kb(h.sram) + " → AppVar " + sramName()]);
+  }
+  rows.push(["WRAM", "$7E-$7F:0000-FFFF (y $00-$3F:0000-1FFF)", "128 KB, la reserva el emulador (no está en la ROM)"]);
+  rows.push(["Registros", "$00-$3F:2100-21FF, 4200-44FF", "PPU, APU, DMA, joypad: los emula el emulador"]);
+  $("memmap").innerHTML = "<tr><th>Zona</th><th>Direcciones SNES</th><th>Dónde está</th></tr>" +
+    rows.map(r => `<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("");
+
+  const total = r.length * 1.0;
+  let est = 0; S.chunks.forEach(c => { if (c.type !== T_EMPTY) est += c.len + 72; });
+  if (est > 3000000) warns.push(`Las variables ocupan ${kb(est)}. La calculadora tiene como mucho unos 3 MB de Flash libre, así que esta ROM probablemente no quepa.`);
+  $("warnings").innerHTML = warns.map(w => `<div class="warn">${w}</div>`).join("");
+
+  renderChunks();
+}
+
+function renderChunks() {
+  const tot = [0, 0, 0, 0], totAuto = [0, 0, 0, 0];
+  S.chunks.forEach(c => { c.blocks.forEach(b => totAuto[b.type] += BLOCK); tot[c.type] += c.len; });
+  const all = S.rom.length;
+  $("summary").innerHTML = [T_CODE, T_GFX, T_DATA, T_EMPTY].map(t => totAuto[t] ? `<i class="${TYPE_CLASS[t]}" style="flex:${totAuto[t]}" title="${TYPE_NAME[t]}"></i>` : "").join("");
+  $("totals").textContent = "Por bloques de 2 KB: " + [T_CODE, T_GFX, T_DATA, T_EMPTY].map(t => `${TYPE_NAME[t]} ${Math.round(100 * totAuto[t] / all)} %`).join(" · ") +
+    ` · Código alcanzado desde los vectores: ${kb(S.tracedBytes)}`;
+  const rowsHtml = S.chunks.map(c => {
+    const bar = c.blocks.map(b => `<i class="${TYPE_CLASS[b.type]}"></i>`).join("");
+    const sel = c.type === T_EMPTY && c.auto === T_EMPTY
+      ? `Vacío ($${hex(c.fill, 2)})`
+      : `<select data-k="${c.k}">${[T_CODE, T_GFX, T_DATA].map(t => `<option value="${t}" ${t === c.type ? "selected" : ""}>${TYPE_NAME[t]}</option>`).join("")}</select>`;
+    return `<tr><td class="mono">${hex(c.k, 2)}</td><td class="mono">${hex(c.start, 6)}–${hex(c.start + c.len - 1, 6)}</td>` +
+      `<td class="mono">${chunkAddr(c.k, S.map)}</td><td><div class="bar">${bar}</div></td><td>${sel}</td>` +
+      `<td class="mono">${chunkName(c) || "—"}</td><td><button data-prev="${c.k}">Ver</button></td></tr>`;
+  }).join("");
+  $("chunks").innerHTML = "<tr><th>Nº</th><th>Desplazamiento</th><th>Dirección SNES</th><th>Contenido (2 KB por celda)</th><th>Tipo</th><th>Variable</th><th></th></tr>" + rowsHtml;
+  $("chunks").querySelectorAll("select").forEach(s => s.onchange = () => { S.chunks[+s.dataset.k].type = +s.value; renderChunks(); });
+  $("chunks").querySelectorAll("button[data-prev]").forEach(b => b.onclick = () => preview(+b.dataset.prev));
+  renderFiles();
+}
+
+function prefix() { return $("prefix").value || "ROM"; }
+function chunkName(c) { return c.type === T_EMPTY ? "" : prefix() + TYPE_LETTER[c.type] + hex(c.k, 2); }
+function sramName() { return prefix() + "SAV"; }
+function wantSram() { return S.hdr.ok && S.hdr.sram > 0 && $("mkSram").checked; }
+
+function renderFiles() {
+  const vars = buildVars();
+  let total = 0;
+  const rows = vars.map(v => { total += v.file.length; return `<tr><td class="mono">${v.name}.8xv</td><td>${v.desc}</td><td>${kb(v.file.length)}</td><td><a class="dl" href="#" data-n="${v.name}">Descargar</a></td></tr>`; }).join("");
+  $("files").innerHTML = `<p style="margin-top:12px">${vars.length} variables, ${kb(total)} en total.</p><table><tr><th>Archivo</th><th>Contenido</th><th>Tamaño</th><th></th></tr>${rows}</table>`;
+  $("files").querySelectorAll("a[data-n]").forEach(a => a.onclick = e => {
+    e.preventDefault();
+    const v = buildVars().find(v => v.name === a.dataset.n);
+    save(new Blob([v.file]), v.name + ".8xv");
+  });
+}
+$("zipBtn").onclick = () => {
+  const vars = buildVars();
+  save(new Blob([makeZip(vars.map(v => ({ name: v.name + ".8xv", data: v.file })))], { type: "application/zip" }), prefix() + ".zip");
+};
+
+function preview(k) {
+  S.prevK = k;
+  $("prevPanel").hidden = false;
+  drawPreview();
+  $("prevPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+$("bppSel").onchange = () => S && S.prevK != null && drawPreview();
+function drawPreview() {
+  const c = S.chunks[S.prevK], bpp = +$("bppSel").value;
+  $("prevTitle").textContent = `Vista previa del trozo ${hex(c.k, 2)} (${TYPE_NAME[c.type]})`;
+  const tileBytes = 8 * bpp, tiles = Math.floor(c.len / tileBytes);
+  const cols = 32, rowsT = Math.ceil(tiles / cols);
+  const cv = $("preview"); cv.width = cols * 8; cv.height = Math.max(8, rowsT * 8);
+  cv.style.width = Math.min(512, cols * 16) + "px";
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(cv.width, cv.height), d = img.data;
+  const r = S.rom, max = (1 << bpp) - 1;
+  for (let t = 0; t < tiles; t++) {
+    const base = c.start + t * tileBytes, tx = (t % cols) * 8, ty = Math.floor(t / cols) * 8;
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      let v = 0;
+      for (let p = 0; p < bpp; p++) {
+        const byte = r[base + ((p >> 1) * 16) + y * 2 + (p & 1)];
+        v |= ((byte >> (7 - x)) & 1) << p;
+      }
+      const g = Math.round(255 * v / max), i = ((ty + y) * cv.width + tx + x) * 4;
+      d[i] = d[i + 1] = d[i + 2] = g; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ---------- Generación de variables ---------- */
+function buildVars() {
+  const r = S.rom, h = S.hdr, vars = [];
+  const sram = wantSram() ? Math.min(h.sram, 65512) : 0;
+  const n = S.chunks.length;
+  const idx = new Uint8Array(80 + n * 12);
+  const dv = new DataView(idx.buffer);
+  idx.set([0x53, 0x4E, 0x43, 0x45], 0);          // "SNCE"
+  idx[4] = 1; idx[5] = S.map;
+  idx[6] = h.ok ? h.mapByte : 0; idx[7] = h.ok ? h.chipByte : 0;
+  dv.setUint32(8, r.length, true);
+  dv.setUint32(12, sram, true);
+  idx[16] = 15; idx[17] = n;
+  idx[18] = h.ok ? h.region : 0;
+  idx[19] = (h.fast ? 1 : 0) | (S.copier ? 2 : 0) | (h.chkOk ? 4 : 0);
+  if (h.ok) {
+    dv.setUint16(20, h.chk, true); dv.setUint16(22, h.cmp, true);
+    for (let i = 0; i < 21; i++) { const c = h.titleBytes[i]; idx[24 + i] = c >= 0x20 && c < 0x7F ? c : 0x20; }
+    const v = h.vec;
+    [v.nCOP, v.nBRK, v.nABORT, v.nNMI, v.nIRQ, v.eCOP, v.eABORT, v.eNMI, v.eRESET, v.eIRQ].forEach((x, i) => dv.setUint16(48 + i * 2, x, true));
+  }
+  if (sram) putName(idx, 68, sramName());
+  S.chunks.forEach((c, i) => {
+    const o = 80 + i * 12;
+    idx[o + 8] = c.type;
+    if (c.type === T_EMPTY) { idx[o + 9] = c.fill; return; }
+    putName(idx, o, chunkName(c));
+    dv.setUint16(o + 10, c.len, true);
+  });
+  vars.push({ name: prefix() + "IDX", desc: "Índice: cabecera, mapa y tabla de trozos", file: make8xv(prefix() + "IDX", idx) });
+  S.chunks.forEach(c => {
+    if (c.type === T_EMPTY) return;
+    const name = chunkName(c);
+    vars.push({ name, desc: `${TYPE_NAME[c.type]} · ROM ${hex(c.start, 6)}–${hex(c.start + c.len - 1, 6)}`, file: make8xv(name, r.subarray(c.start, c.start + c.len)) });
+  });
+  if (sram) vars.push({ name: sramName(), desc: `SRAM (${kb(sram)}, vacía)`, file: make8xv(sramName(), new Uint8Array(sram)) });
+  return vars;
+}
+
+function putName(buf, o, name) { for (let i = 0; i < 8; i++) buf[o + i] = i < name.length ? name.charCodeAt(i) : 0; }
+
+// Archivo .8xv (AppVar, tipo 0x15) para TI-84 Plus CE, marcado como archivado.
+function make8xv(name, content) {
+  const L = content.length + 2;                  // datos de la variable: u16 tamaño + contenido
+  const entry = new Uint8Array(17 + L);
+  const dv = new DataView(entry.buffer);
+  dv.setUint16(0, 13, true);                     // longitud de la cabecera de la entrada
+  dv.setUint16(2, L, true);
+  entry[4] = 0x15;                               // AppVar
+  putName(entry, 5, name);
+  entry[13] = 0;                                 // versión
+  entry[14] = 0x80;                              // archivada
+  dv.setUint16(15, L, true);
+  dv.setUint16(17, content.length, true);
+  entry.set(content, 19);
+  const head = new Uint8Array(55);
+  head.set([0x2A, 0x2A, 0x54, 0x49, 0x38, 0x33, 0x46, 0x2A, 0x1A, 0x0A, 0x00]);  // **TI83F*
+  const comment = "snes-ti84ce rom-converter";
+  for (let i = 0; i < comment.length; i++) head[11 + i] = comment.charCodeAt(i);
+  new DataView(head.buffer).setUint16(53, entry.length, true);
+  let sum = 0; for (let i = 0; i < entry.length; i++) sum += entry[i];
+  const out = new Uint8Array(55 + entry.length + 2);
+  out.set(head); out.set(entry, 55);
+  new DataView(out.buffer).setUint16(55 + entry.length, sum & 0xFFFF, true);
+  return out;
+}
+
+/* ---------- ZIP (sin compresión) ---------- */
+const CRC_T = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+function crc32(d) { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC_T[(c ^ d[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const nm = new TextEncoder().encode(f.name), crc = crc32(f.data);
+    const lh = new Uint8Array(30 + nm.length), l = new DataView(lh.buffer);
+    l.setUint32(0, 0x04034B50, true); l.setUint16(4, 20, true); l.setUint16(10, 0, true); l.setUint16(12, 0x21, true);
+    l.setUint32(14, crc, true); l.setUint32(18, f.data.length, true); l.setUint32(22, f.data.length, true);
+    l.setUint16(26, nm.length, true); lh.set(nm, 30);
+    const ch = new Uint8Array(46 + nm.length), c = new DataView(ch.buffer);
+    c.setUint32(0, 0x02014B50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(14, 0x21, true);
+    c.setUint32(16, crc, true); c.setUint32(20, f.data.length, true); c.setUint32(24, f.data.length, true);
+    c.setUint16(28, nm.length, true); c.setUint32(42, off, true); ch.set(nm, 46);
+    parts.push(lh, f.data); central.push(ch);
+    off += lh.length + f.data.length;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array(22), e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054B50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  const out = new Uint8Array(off + cdSize + 22);
+  let p = 0; for (const x of [...parts, ...central, end]) { out.set(x, p); p += x.length; }
+  return out;
+}
+
+function save(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+</script>
+</body>
+</html>
