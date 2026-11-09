@@ -30,15 +30,37 @@ src/
   main.c        Punto de entrada: inicializa gráficos y el bucle principal
   cpu/65c816.c  Núcleo de la CPU 65C816 (pendiente)
   cpu/65c816.h
+  input/joypad.c  Mando SNES: teclado -> registros $4016/$4017 y $4218-$421F
+  input/joypad.h
+tests/joypad/   Tests del mando en el PC (`make -C tests/joypad`)
 makefile        Configuración del CE C Toolchain
 ```
+
+## Controles
+
+| SNES | Calculadora |
+|------|-------------|
+| Cruceta | flechas |
+| Y | `[2nd]` |
+| X | `[mode]` |
+| B | `[alpha]` |
+| A | `[X,T,θ,n]` |
+| L | `[y=]` |
+| R | `[graph]` |
+| Select | `[+]` |
+| Start | `[enter]` |
+| Salir del emulador | `[clear]` |
+
+Y, X, B y A ocupan el bloque 2×2 a la izquierda de las flechas con la misma posición relativa que en el mando de la SNES (Y/X arriba, B/A abajo; Y/B a la izquierda, X/A a la derecha), así se juega con el pulgar izquierdo en los botones y el derecho en la cruceta, o al revés. L y R están en las teclas de los extremos de la fila superior. Pulsar dos direcciones opuestas a la vez se ignora, como en una cruceta real. La tabla está en `src/input/joypad.c` (`key_map`) y se puede cambiar fácilmente.
+
+El bus de la CPU debe enviar a `joypad_read`/`joypad_write` las direcciones `$4016`, `$4017` y `$4218-$421F`, y llamar a `joypad_poll()` + `joypad_auto_read()` al empezar cada VBlank cuando `$4200` bit 0 está activo. Solo se emula el mando 1; los mandos 2-4 se leen como desconectados.
 
 ## Hoja de ruta
 
 1. Núcleo CPU 65C816 con decodificador de opcodes.
 2. Mapa de memoria (LoROM/HiROM) leyendo la ROM desde AppVars en Flash.
 3. PPU simplificada (modo 1, escalado 256×224 → 320×240).
-4. Entrada con `keypadc`.
+4. ~~Entrada con `keypadc`.~~ Hecho (ver Controles).
 5. Audio: probablemente omitido (la calculadora no tiene salida de sonido).
 
 ## Licencia
