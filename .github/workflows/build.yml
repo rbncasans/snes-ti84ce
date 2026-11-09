@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Tests del mando (PC)
+        run: make -C tests/joypad
       - name: Instalar CE C Toolchain
         run: |
           curl -sL https://github.com/CE-Programming/toolchain/releases/latest/download/CEdev-Linux.tar.gz | tar xz
