@@ -10,12 +10,24 @@
 #include "demo_rom.h"
 #include "mem/mem.h"
 #include "mem/rom_ce.h"
+#include "ppu/ppu.h"
+#include "ppu/ppu_demo.h"
+#include "input/joypad.h"
 
-/* Se dibuja siempre directamente en pantalla (un solo búfer): la segunda
- * mitad de la RAM del LCD queda libre para la VRAM de la PPU, el cartucho
- * de autotest y una página de WRAM. */
-#define LCD_RAM   ((uint8_t *)0xD40000)
-#define LCD_BACK  (LCD_RAM + 320 * 240)
+/* Se dibuja siempre directamente en pantalla (un solo búfer, nunca
+ * gfx_SetDrawBuffer): la segunda mitad de la RAM del LCD queda libre para
+ * la VRAM de la PPU (0xD52C00-0xD62BFF), el cartucho de autotest (antes de
+ * arrancar la PPU) y una página de WRAM (0xD62C00, ver mem/rom_ce.c). */
+#define LCD_RAM     ((uint8_t *)0xD40000)
+#define LCD_BACK    (LCD_RAM + 320 * 240)
+#define LCD_PALETTE ((uint16_t *)0xE30200)
+/* Imagen SNES de 256x224 centrada en la pantalla de 320x240 */
+#define SNES_OUT    (LCD_RAM + 8 * 320 + 32)
+#define SNES_VRAM   LCD_BACK
+
+/* Ciclos de bus por línea (~1364 ciclos maestros / 8) y líneas por fotograma */
+#define LINE_CYCLES 170u
+#define FRAME_LINES 262u
 
 #define MAX_ROMS 8
 
@@ -52,6 +64,16 @@ static void screen(const char *title)
     gfx_SetTextFGColor(0);
     gfx_PrintStringXY(title, 8, 8);
     gfx_HorizLine(8, 18, 304);
+}
+
+/* Vuelve a la paleta de graphx tras usar la de la PPU */
+static void restore_screen(void)
+{
+    gfx_SetDefaultPalette(gfx_8bpp);
+    gfx_SetTextTransparentColor(0);
+    gfx_SetTextBGColor(255);
+    gfx_SetTextFGColor(0);
+    gfx_SetColor(255);
 }
 
 static bool check(const char *label, uint32_t addr, uint16_t expected, uint8_t y)
@@ -119,6 +141,122 @@ static void autotest(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Demo de la PPU: [<] [>] cambian de modo, [clear] sale                */
+/* ------------------------------------------------------------------ */
+
+static void ppu_demo(void)
+{
+    uint8_t mode = 1;
+    uint16_t frame = 0;
+    uint8_t fps10 = 0;
+    clock_t t0 = clock();
+    uint8_t frames = 0;
+    bool held = false;
+
+    memset(LCD_RAM, 0, 320 * 240);
+    ppu_init(SNES_VRAM, SNES_OUT, 320);
+    demo_setup(mode);
+
+    for (;;) {
+        uint16_t v;
+
+        kb_Scan();
+        if (kb_IsDown(kb_KeyClear))
+            break;
+        if (kb_IsDown(kb_KeyLeft) || kb_IsDown(kb_KeyRight)) {
+            if (!held) {
+                mode = (uint8_t)((mode + (kb_IsDown(kb_KeyRight) ? 1 : 7)) & 7);
+                memset(LCD_RAM, 0, 320 * 240);
+                demo_setup(mode);
+                frame = 0;
+            }
+            held = true;
+        } else {
+            held = false;
+        }
+
+        demo_frame(mode, frame);
+        ppu_frame_start();
+        for (v = 1; v <= ppu_visible_lines(); v++) {
+            demo_line(mode, v, frame);
+            ppu_render_line(v);
+        }
+        ppu_vblank_start();
+        if (ppu_palette_dirty) {
+            ppu_build_palette(LCD_PALETTE);
+            ppu_palette_dirty = 0;
+        }
+
+        if (++frames == 8) {
+            clock_t t1 = clock();
+            uint32_t dt = (uint32_t)(t1 - t0);
+            fps10 = dt ? (uint8_t)((80u * CLOCKS_PER_SEC) / dt) : 0;
+            t0 = t1;
+            frames = 0;
+        }
+        /* Texto en el borde superior, con el color 255 (blanco en la demo) */
+        gfx_SetColor(0);
+        gfx_FillRectangle_NoClip(0, 0, 320, 8);
+        gfx_SetTextFGColor(255);
+        gfx_SetTextTransparentColor(254);
+        gfx_SetTextBGColor(254);
+        gfx_PrintStringXY(demo_name(mode), 2, 0);
+        gfx_SetTextXY(250, 0);
+        gfx_PrintUInt(fps10 / 10, 1);
+        gfx_PrintChar('.');
+        gfx_PrintUInt(fps10 % 10, 1);
+        gfx_PrintString(" fps");
+        frame++;
+    }
+    restore_screen();
+}
+
+/* ------------------------------------------------------------------ */
+/* Prueba del mando: muestra los botones SNES pulsados                  */
+/* ------------------------------------------------------------------ */
+
+/* Nombres de los botones en el orden de los bits 15..4 del mando. */
+static const char *const button_names[12] = {
+    "B", "Y", "Select", "Start", "Arriba", "Abajo",
+    "Izquierda", "Derecha", "A", "X", "L", "R",
+};
+
+static void draw_pad(uint16_t pad)
+{
+    uint8_t i;
+
+    gfx_FillRectangle(0, 40, 320, 140);
+    for (i = 0; i < 12; i++) {
+        uint16_t bit = (uint16_t)(0x8000u >> i);
+        gfx_SetTextFGColor((pad & bit) ? 224 : 181); /* rojo / gris */
+        gfx_PrintStringXY(button_names[i], 16 + (i / 6) * 150, 48 + (i % 6) * 16);
+    }
+    gfx_SetTextFGColor(0);
+    gfx_PrintStringXY("$4218/$4219 = ", 8, 160);
+    print_hex(joypad_read(0x4218), 2);
+    gfx_PrintString(" ");
+    print_hex(joypad_read(0x4219), 2);
+}
+
+static void joypad_test(void)
+{
+    uint16_t last = 0xFFFF;
+
+    screen("snes-ti84ce - prueba del mando");
+    gfx_PrintStringXY("Pulsa [clear] para salir", 8, 24);
+    joypad_reset();
+    do kb_Scan(); while (kb_AnyKey());
+    do {
+        uint16_t pad = joypad_poll();
+        joypad_auto_read(); /* lo que hace el bus en cada VBlank */
+        if (pad != last) {
+            draw_pad(pad);
+            last = pad;
+        }
+    } while (!joypad_quit_requested());
+}
+
+/* ------------------------------------------------------------------ */
 /* Selección y prueba de una ROM convertida                            */
 /* ------------------------------------------------------------------ */
 
@@ -155,13 +293,110 @@ static int8_t choose_rom(char names[][9], uint8_t n)
     }
 }
 
+/* Conecta PPU y mando al mapa de memoria */
+static void connect_hooks(void)
+{
+    memset(&mem_hooks, 0, sizeof mem_hooks);
+    mem_hooks.ppu_read = ppu_read;
+    mem_hooks.ppu_write = ppu_write;
+    mem_hooks.joy_read = joypad_read;
+    mem_hooks.joy_write = joypad_write;
+    mem_hooks.joy_auto_read = joypad_auto_read;
+}
+
+/* Ejecuta la CPU durante `cycles` ciclos de bus. */
+static uint32_t run_cpu(uint32_t cycles)
+{
+    uint32_t target = cpu.cycles + cycles;
+    uint32_t n = 0;
+    while ((int32_t)(cpu.cycles - target) < 0 && !cpu.stopped) {
+        cpu_step(&cpu);
+        cpu.cycles += mem_take_dma_cycles();
+        n++;
+        if (mem_take_nmi_request())
+            cpu_nmi(&cpu);
+        if (!mem_irq_pending())
+            cpu_set_irq(&cpu, 0);
+    }
+    return n;
+}
+
+/* Bucle principal de la consola: CPU + PPU por líneas + mando. */
+static void run_console(void)
+{
+    uint32_t frames = 0, instr = 0;
+    uint8_t fps10 = 0;
+    clock_t t0;
+
+    memset(LCD_RAM, 0, 320 * 240);
+    ppu_init(SNES_VRAM, SNES_OUT, 320);
+    ppu_reset();
+    joypad_reset();
+    connect_hooks();
+
+    cpu_reset(&cpu);
+    t0 = clock();
+    for (;;) {
+        uint16_t v, visible;
+
+        mem_vblank_end();
+        ppu_frame_start();
+        visible = ppu_visible_lines();
+        for (v = 0; v < FRAME_LINES; v++) {
+            if (mem_line_irq(v))
+                cpu_set_irq(&cpu, 1);
+            ppu_set_counters(0, v);
+            if (v == visible + 1) {
+                ppu_vblank_start();
+                joypad_poll();
+                if (mem_vblank_start())
+                    cpu_nmi(&cpu);
+            }
+            instr += run_cpu(LINE_CYCLES);
+            /* TODO: HDMA de la línea (mem_hdmaen) antes de renderizarla */
+            if (v >= 1 && v <= visible)
+                ppu_render_line(v);
+        }
+        if (ppu_palette_dirty) {
+            ppu_build_palette(LCD_PALETTE);
+            ppu_palette_dirty = 0;
+        }
+        frames++;
+
+        if (joypad_quit_requested())
+            break;
+
+        if ((frames & 15) == 0) {
+            clock_t t1 = clock();
+            uint32_t dt = (uint32_t)(t1 - t0);
+            fps10 = dt ? (uint8_t)((160u * CLOCKS_PER_SEC) / dt) : 0;
+            t0 = t1;
+            instr = 0;
+        }
+        /* Barra superior: fotogramas por segundo y PC */
+        gfx_SetColor(0);
+        gfx_FillRectangle_NoClip(0, 0, 320, 8);
+        gfx_SetTextFGColor(255);
+        gfx_SetTextTransparentColor(254);
+        gfx_SetTextBGColor(254);
+        gfx_SetTextXY(2, 0);
+        gfx_PrintString("PC ");
+        print_hex(((uint32_t)cpu.pb << 16) | cpu.pc, 6);
+        gfx_PrintString(cpu.stopped ? " STP" : cpu.waiting ? " WAI" : "");
+        gfx_SetTextXY(250, 0);
+        gfx_PrintUInt(fps10 / 10, 1);
+        gfx_PrintChar('.');
+        gfx_PrintUInt(fps10 % 10, 1);
+        gfx_PrintString(" fps");
+    }
+    restore_screen();
+}
+
 static void run_rom(const char *name)
 {
     static const char *map_name[3] = { "LoROM", "HiROM", "ExHiROM" };
     uint32_t hdr;
     uint16_t reset;
-    uint32_t frames = 0, instr = 0;
-    clock_t t0;
     int err;
     uint8_t y;
 
@@ -213,70 +448,63 @@ static void run_rom(const char *name)
     gfx_PrintString("  opcode ");
     print_hex(bus_read(reset), 2);
 
-    gfx_PrintStringXY("Ejecutando la CPU (sin PPU todavia).", 8, 116);
-    gfx_PrintStringXY("[clear] para salir", 8, 220);
+    gfx_PrintStringXY("Pulsa una tecla para empezar", 8, 116);
+    gfx_PrintStringXY("[clear] para salir durante el juego", 8, 128);
+    wait_key();
+    do kb_Scan(); while (kb_AnyKey());
 
-    cpu_reset(&cpu);
-    t0 = clock();
-    for (;;) {
-        /* ~1 fotograma: 262 líneas, ~1364/8 ciclos de bus por línea */
-        uint32_t target = cpu.cycles + 262u * 170u;
-        while (cpu.cycles < target && !cpu.stopped) {
-            cpu_step(&cpu);
-            cpu.cycles += mem_take_dma_cycles();
-            instr++;
-            if (mem_take_nmi_request())
-                cpu_nmi(&cpu);
-        }
-        mem_vblank_end();
-        if (mem_vblank_start())
-            cpu_nmi(&cpu);
-        frames++;
-
-        if ((frames & 31) == 0) {
-            uint32_t dt = (uint32_t)(clock() - t0);
-            kb_Scan();
-            if (kb_IsDown(kb_KeyClear))
-                break;
-            gfx_FillRectangle(0, 128, 320, 60);
-            gfx_SetColor(255);
-            gfx_PrintStringXY("PC = ", 8, 130);
-            print_hex(((uint32_t)cpu.pb << 16) | cpu.pc, 6);
-            gfx_PrintString(cpu.stopped ? "  (STP)" : cpu.waiting ? "  (WAI)" : "");
-            gfx_PrintStringXY("Fotogramas: ", 8, 142);
-            gfx_PrintUInt(frames, 1);
-            gfx_PrintStringXY("Instrucciones/s: ", 8, 154);
-            gfx_PrintUInt(dt ? (uint32_t)((float)instr * CLOCKS_PER_SEC / dt) : 0, 1);
-            gfx_PrintStringXY("Fotogramas/s x10: ", 8, 166);
-            gfx_PrintUInt(dt ? (uint32_t)(320u * CLOCKS_PER_SEC / dt) : 0, 1);
-            t0 = clock();
-            instr = 0;
-        }
-    }
+    run_console();
     rom_unload();
 }
 
-int main(void)
+static void load_rom_menu(void)
 {
     static char names[MAX_ROMS][9];
     uint8_t n;
     int8_t sel;
 
-    gfx_Begin();
-    gfx_SetDrawScreen();
-    gfx_SetColor(255);
-
-    autotest();
+    screen("snes-ti84ce - cargar ROM");
     n = rom_list(names, MAX_ROMS);
     if (n == 0) {
-        gfx_PrintStringXY("No hay ROMs convertidas (AppVars SNCE).", 8, 140);
-        gfx_PrintStringXY("Usa tools/rom-converter.html", 8, 152);
-        gfx_PrintStringXY("Pulsa una tecla para salir", 8, 220);
+        gfx_PrintStringXY("No hay ROMs convertidas (AppVars SNCE).", 8, 32);
+        gfx_PrintStringXY("Usa tools/rom-converter.html", 8, 44);
+        gfx_PrintStringXY("Pulsa una tecla", 8, 220);
         wait_key();
-    } else {
-        sel = choose_rom(names, n);
-        if (sel >= 0)
-            run_rom(names[sel]);
+        return;
+    }
+    gfx_SetColor(255);
+    sel = choose_rom(names, n);
+    if (sel >= 0)
+        run_rom(names[sel]);
+}
+
+int main(void)
+{
+    gfx_Begin();
+    gfx_SetDrawScreen();
+    restore_screen();
+
+    autotest();
+    gfx_PrintStringXY("Pulsa una tecla", 8, 220);
+    wait_key();
+
+    for (;;) {
+        screen("snes-ti84ce - menu");
+        gfx_PrintStringXY("[1] Cargar una ROM convertida", 8, 32);
+        gfx_PrintStringXY("[2] Demo de la PPU (modos 0-7)", 8, 44);
+        gfx_PrintStringXY("[3] Prueba del mando", 8, 56);
+        gfx_PrintStringXY("[clear] Salir", 8, 76);
+        do kb_Scan(); while (kb_AnyKey());
+        do kb_Scan(); while (!kb_AnyKey());
+        if (kb_IsDown(kb_KeyClear))
+            break;
+        if (kb_IsDown(kb_Key1)) {
+            load_rom_menu();
+        } else if (kb_IsDown(kb_Key2)) {
+            ppu_demo();
+        } else if (kb_IsDown(kb_Key3)) {
+            joypad_test();
+        }
     }
 
     gfx_End();

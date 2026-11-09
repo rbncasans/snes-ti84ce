@@ -11,3 +11,5 @@ __pycache__/
 *.fig
 *.swc
 tests/test_mem
+tests/test_ppu
+tests/out/
