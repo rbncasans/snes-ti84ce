@@ -37,11 +37,20 @@ Envía `bin/SNESCE.8xp` a la calculadora con TI Connect CE o TILP y ejecútalo d
 ## Tests en PC
 
 ```sh
-make -C tests          # tests propios, rápidos, sin dependencias (CPU y PPU)
+make -C tests          # tests propios, rápidos, sin dependencias (CPU, memoria y PPU)
+make -C tests/joypad   # tests del mando
 make -C tests demos    # guarda las escenas de la PPU en tests/out/modoN.ppm
 make -C tests sst      # batería SingleStepTests completa (descarga ~2 GB por partes)
 make -C tests sst OPS="a9 69"   # solo algunos opcodes
 ```
+
+## Convertir una ROM
+
+Abre `tools/rom-converter.html` en el navegador (funciona sin conexión, la ROM no
+sale de tu ordenador). Carga un `.sfc`/`.smc`: muestra la cabecera, el mapa de
+memoria y una estimación de qué partes son programa, gráficos y datos, y genera
+varias AppVars `.8xv` (índice, trozos de 32 KB y SRAM) para enviar a la
+calculadora. El formato está descrito en [docs/formato-appvars.md](docs/formato-appvars.md).
 
 ## Estructura
 
@@ -66,6 +75,8 @@ tests/
   test_ppu.c    Tests de la PPU en PC (registros y píxeles conocidos)
   sst/          Ejecutor de la batería SingleStepTests
   joypad/       Tests del mando en el PC (`make -C tests/joypad`)
+tools/rom-converter.html  Conversor de ROMs a AppVars (HTML, en local)
+docs/formato-appvars.md   Formato de las AppVars de ROM
 makefile        Configuración del CE C Toolchain
 ```
 
