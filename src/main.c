@@ -8,6 +8,7 @@
 #include "bus.h"
 #include "cpu/65c816.h"
 #include "demo_rom.h"
+#include "emu.h"
 #include "mem/mem.h"
 #include "mem/rom_ce.h"
 #include "ppu/ppu.h"
@@ -25,9 +26,6 @@
 #define SNES_OUT    (LCD_RAM + 8 * 320 + 32)
 #define SNES_VRAM   LCD_BACK
 
-/* Ciclos de bus por línea (~1364 ciclos maestros / 8) y líneas por fotograma */
-#define LINE_CYCLES 170u
-#define FRAME_LINES 262u
 
 #define MAX_ROMS 8
 
@@ -293,77 +291,33 @@ static int8_t choose_rom(char names[][9], uint8_t n)
     }
 }
 
-/* Conecta PPU y mando al mapa de memoria */
-static void connect_hooks(void)
-{
-    memset(&mem_hooks, 0, sizeof mem_hooks);
-    mem_hooks.ppu_read = ppu_read;
-    mem_hooks.ppu_write = ppu_write;
-    mem_hooks.joy_read = joypad_read;
-    mem_hooks.joy_write = joypad_write;
-    mem_hooks.joy_auto_read = joypad_auto_read;
-}
+/* Bucle de la consola (src/emu.c) con la barra de estado de arriba.
+ * Se dibuja un fotograma de cada FRAMESKIP + 1. */
+#define FRAMESKIP 0
 
-/* Ejecuta la CPU durante `cycles` ciclos de bus. */
-static uint32_t run_cpu(uint32_t cycles)
-{
-    uint32_t target = cpu.cycles + cycles;
-    uint32_t n = 0;
-    while ((int32_t)(cpu.cycles - target) < 0 && !cpu.stopped) {
-        cpu_step(&cpu);
-        cpu.cycles += mem_take_dma_cycles();
-        n++;
-        if (mem_take_nmi_request())
-            cpu_nmi(&cpu);
-        if (!mem_irq_pending())
-            cpu_set_irq(&cpu, 0);
-    }
-    return n;
-}
-
-/* Bucle principal de la consola: CPU + PPU por líneas + mando. */
 static void run_console(void)
 {
-    uint32_t frames = 0, instr = 0;
-    uint8_t fps10 = 0;
+    uint32_t frames = 0;
+    uint8_t fps10 = 0, skip = 0;
     clock_t t0;
 
     memset(LCD_RAM, 0, 320 * 240);
-    ppu_init(SNES_VRAM, SNES_OUT, 320);
-    ppu_reset();
-    joypad_reset();
-    connect_hooks();
+    emu_init(SNES_VRAM, SNES_OUT, 320);
 
-    cpu_reset(&cpu);
     t0 = clock();
     for (;;) {
-        uint16_t v, visible;
+        bool render = skip == 0;
 
-        mem_vblank_end();
-        ppu_frame_start();
-        visible = ppu_visible_lines();
-        for (v = 0; v < FRAME_LINES; v++) {
-            if (mem_line_irq(v))
-                cpu_set_irq(&cpu, 1);
-            ppu_set_counters(0, v);
-            if (v == visible + 1) {
-                ppu_vblank_start();
-                joypad_poll();
-                if (mem_vblank_start())
-                    cpu_nmi(&cpu);
-            }
-            instr += run_cpu(LINE_CYCLES);
-            /* TODO: HDMA de la línea (mem_hdmaen) antes de renderizarla */
-            if (v >= 1 && v <= visible)
-                ppu_render_line(v);
-        }
+        emu_frame(render);
+        if (++skip > FRAMESKIP)
+            skip = 0;
         if (ppu_palette_dirty) {
             ppu_build_palette(LCD_PALETTE);
             ppu_palette_dirty = 0;
         }
         frames++;
 
-        if (joypad_quit_requested())
+        if (emu_quit_requested())
             break;
 
         if ((frames & 15) == 0) {
@@ -371,9 +325,11 @@ static void run_console(void)
             uint32_t dt = (uint32_t)(t1 - t0);
             fps10 = dt ? (uint8_t)((160u * CLOCKS_PER_SEC) / dt) : 0;
             t0 = t1;
-            instr = 0;
+            emu_instr = 0;
         }
-        /* Barra superior: fotogramas por segundo y PC */
+        if (!render)
+            continue;
+        /* Barra superior: PC y fotogramas emulados por segundo */
         gfx_SetColor(0);
         gfx_FillRectangle_NoClip(0, 0, 320, 8);
         gfx_SetTextFGColor(255);
@@ -381,8 +337,8 @@ static void run_console(void)
         gfx_SetTextBGColor(254);
         gfx_SetTextXY(2, 0);
         gfx_PrintString("PC ");
-        print_hex(((uint32_t)cpu.pb << 16) | cpu.pc, 6);
-        gfx_PrintString(cpu.stopped ? " STP" : cpu.waiting ? " WAI" : "");
+        print_hex(((uint32_t)emu_cpu.pb << 16) | emu_cpu.pc, 6);
+        gfx_PrintString(emu_cpu.stopped ? " STP" : emu_cpu.waiting ? " WAI" : "");
         gfx_SetTextXY(250, 0);
         gfx_PrintUInt(fps10 / 10, 1);
         gfx_PrintChar('.');

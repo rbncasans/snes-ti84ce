@@ -14,3 +14,4 @@ tests/test_mem
 tests/test_ppu
 tests/out/
 tests/joypad/joypad_test
+tests/test_emu

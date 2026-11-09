@@ -119,12 +119,18 @@ uint8_t mem_irq_pending(void);
  * el bucle principal debe lanzar la NMI y se limpia al leerlo. */
 uint8_t mem_take_nmi_request(void);
 
-/* Ciclos de CPU que han consumido las DMA desde la última llamada. */
+/* HDMA: mem_hdma_init() al empezar el fotograma (V = 0) y mem_hdma_line()
+ * en el H-blank de cada línea 0..visibles-1 (lo que escribe en la línea v
+ * se ve al renderizar la línea v+1). Los canales son los de $420C. */
+void mem_hdma_init(void);
+void mem_hdma_line(void);
+
+/* Ciclos de CPU que han consumido las DMA y HDMA desde la última llamada. */
 uint32_t mem_take_dma_cycles(void);
 
 /* Registros de la CPU visibles para el bucle principal */
 extern uint8_t mem_nmitimen; /* $4200 */
-extern uint8_t mem_hdmaen;   /* $420C (el HDMA lo hará el bucle de líneas) */
+extern uint8_t mem_hdmaen;   /* $420C */
 extern uint8_t mem_memsel;   /* $420D bit 0: FastROM */
 extern uint8_t mem_dma[8][16]; /* $43x0-$43xF */
 

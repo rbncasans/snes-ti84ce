@@ -31,6 +31,8 @@ static uint16_t htime = 0x1FF, vtime = 0x1FF;
 static uint8_t  rdnmi, timeup, hvbjoy;
 static uint8_t  nmi_request;
 static uint32_t dma_cycles;
+static uint8_t hdma_active;    /* Canales que siguen vivos este fotograma */
+static uint8_t hdma_do;        /* Canales que transfieren en la próxima línea */
 
 /* Puerto de WRAM $2180-$2183 */
 static uint32_t wmadd;
@@ -179,6 +181,7 @@ void mem_reset_io(void)
 {
     mem_nmitimen = 0;
     mem_hdmaen = 0;
+    hdma_active = hdma_do = 0;
     mem_memsel = 0;
     memset(mem_dma, 0xFF, sizeof mem_dma);
     wrio = 0xFF;
@@ -274,6 +277,9 @@ static void run_dma(uint8_t channels)
 
         if (!(channels & (1u << ch)))
             continue;
+        /* Un canal ocupado por el HDMA en este fotograma no hace DMA */
+        if (hdma_active & mem_hdmaen & (1u << ch))
+            continue;
         dmap = r[0];
         bbad = r[1];
         a1t = (uint16_t)(r[2] | (r[3] << 8));
@@ -298,6 +304,131 @@ static void run_dma(uint8_t channels)
         r[2] = (uint8_t)a1t;
         r[3] = (uint8_t)(a1t >> 8);
         r[5] = r[6] = 0;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* HDMA ($420C)                                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Estado por canal en los propios registros, como en la consola:
+ *   $43x2-$43x4  A1T/A1B  inicio de la tabla
+ *   $43x5-$43x7  DAS/DASB dirección indirecta (modo indirecto, bit 6 de DMAP)
+ *   $43x8-$43x9  A2A      posición actual en la tabla
+ *   $43xA        NLTR     bit 7 = repetir, bits 0-6 = líneas que quedan
+ */
+
+/* Bytes por transferencia según el modo */
+static const uint8_t hdma_len[8] = { 1, 2, 2, 4, 4, 4, 2, 4 };
+
+
+/* Lee un byte de la tabla y avanza A2A */
+static uint8_t hdma_table_byte(uint8_t *r)
+{
+    uint16_t a2a = (uint16_t)(r[8] | (r[9] << 8));
+    uint8_t v = bus_read(((uint32_t)r[4] << 16) | a2a);
+    a2a++;
+    r[8] = (uint8_t)a2a;
+    r[9] = (uint8_t)(a2a >> 8);
+    return v;
+}
+
+/* Carga la siguiente entrada de la tabla. Devuelve 0 si la tabla termina. */
+static uint8_t hdma_load_entry(uint8_t ch)
+{
+    uint8_t *r = mem_dma[ch];
+    r[10] = hdma_table_byte(r);
+    if (r[10] == 0)
+        return 0;
+    if (r[0] & 0x40) {
+        r[5] = hdma_table_byte(r);
+        r[6] = hdma_table_byte(r);
+    }
+    dma_cycles += (r[0] & 0x40) ? 24 : 8;
+    return 1;
+}
+
+void mem_hdma_init(void)
+{
+    uint8_t ch;
+
+    hdma_active = 0;
+    hdma_do = 0;
+    for (ch = 0; ch < 8; ch++) {
+        uint8_t *r = mem_dma[ch];
+        if (!(mem_hdmaen & (1u << ch)))
+            continue;
+        r[8] = r[2];
+        r[9] = r[3];
+        if (hdma_load_entry(ch)) {
+            hdma_active |= (uint8_t)(1u << ch);
+            hdma_do |= (uint8_t)(1u << ch);
+        }
+    }
+    if (hdma_active)
+        dma_cycles += 18;
+}
+
+void mem_hdma_line(void)
+{
+    uint8_t ch;
+    uint8_t chans = (uint8_t)(hdma_active & mem_hdmaen);
+
+    if (!chans)
+        return;
+    dma_cycles += 18;
+    for (ch = 0; ch < 8; ch++) {
+        uint8_t bit = (uint8_t)(1u << ch);
+        uint8_t *r = mem_dma[ch];
+        uint8_t dmap, n;
+
+        if (!(chans & bit))
+            continue;
+        dmap = r[0];
+
+        if (hdma_do & bit) {
+            const uint8_t *pat = dma_pattern[dmap & 7];
+            uint8_t len = hdma_len[dmap & 7], i;
+            for (i = 0; i < len; i++) {
+                uint32_t a;
+                uint8_t b = (uint8_t)(r[1] + pat[i]);
+                if (dmap & 0x40) {
+                    uint16_t das = (uint16_t)(r[5] | (r[6] << 8));
+                    a = ((uint32_t)r[7] << 16) | das;
+                    das++;
+                    r[5] = (uint8_t)das;
+                    r[6] = (uint8_t)(das >> 8);
+                } else {
+                    uint16_t a2a = (uint16_t)(r[8] | (r[9] << 8));
+                    a = ((uint32_t)r[4] << 16) | a2a;
+                    a2a++;
+                    r[8] = (uint8_t)a2a;
+                    r[9] = (uint8_t)(a2a >> 8);
+                }
+                if (dmap & 0x80)
+                    bus_write(a, bbus_read(b, 0));
+                else
+                    bbus_write(b, bus_read(a));
+            }
+            dma_cycles += 8u * len;
+        }
+
+        /* Una línea menos; al llegar a 0 se carga la siguiente entrada */
+        n = (uint8_t)((r[10] & 0x7F) - 1);
+        r[10] = (uint8_t)((r[10] & 0x80) | (n & 0x7F));
+        if ((n & 0x7F) == 0) {
+            if (hdma_load_entry(ch)) {
+                hdma_do |= bit;
+            } else {
+                hdma_active &= (uint8_t)~bit;
+                hdma_do &= (uint8_t)~bit;
+            }
+        } else if (r[10] & 0x80) {
+            hdma_do |= bit;
+        } else {
+            hdma_do &= (uint8_t)~bit;
+        }
     }
 }
 

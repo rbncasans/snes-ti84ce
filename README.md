@@ -9,9 +9,10 @@ Emulador original de Super Nintendo (SNES) para la calculadora **TI-84 Plus CE /
 🚧 En desarrollo.
 
 - ✅ **CPU 65C816**: intérprete completo (256 opcodes, modos 8/16 bits, modo emulación, aritmética decimal, NMI/IRQ/BRK/COP, WAI/STP, MVN/MVP). Verificado contra la batería [SingleStepTests](https://github.com/SingleStepTests/65816) (registros y RAM; los ciclos son aproximados).
-- ✅ **Mapa de memoria**: LoROM, HiROM y ExHiROM con espejos (también ROMs que no miden una potencia de 2), WRAM de 128 KB con sus espejos y el puerto `$2180`, SRAM, registros `$42xx` (multiplicación, división, NMI/IRQ, RDNMI/TIMEUP/HVBJOY), DMA de propósito general y detección de la cabecera del cartucho. La ROM se lee directamente de las AppVars archivadas en Flash (sin copiarla a RAM). Ver `src/mem/mem.h`.
+- ✅ **Mapa de memoria**: LoROM, HiROM y ExHiROM con espejos (también ROMs que no miden una potencia de 2), WRAM de 128 KB con sus espejos y el puerto `$2180`, SRAM, registros `$42xx` (multiplicación, división, NMI/IRQ, RDNMI/TIMEUP/HVBJOY), DMA de propósito general, **HDMA** (directo e indirecto, todos los modos) y detección de la cabecera del cartucho. La ROM se lee directamente de las AppVars archivadas en Flash (sin copiarla a RAM). Ver `src/mem/mem.h`.
 - ✅ **PPU** (`src/ppu/`): registros $2100-$213F, VRAM/CGRAM/OAM, modos 0-6, modo 7 (incluido EXTBG), sprites, ventanas en la pantalla principal y mosaico. Ver [PPU](#ppu).
-- ⏳ HDMA, matemática de color. El audio (SPC700) probablemente se omitirá (hay una APU falsa que responde a los juegos para que no se cuelguen).
+- ✅ **Bucle principal** (`src/emu.c`): une CPU, memoria (DMA/HDMA), PPU y mando línea a línea (262 líneas por fotograma: IRQ de línea, CPU, render de la línea, HDMA en el H-blank; NMI y lectura automática del mando al entrar en V-blank). Admite salto de fotogramas (`FRAMESKIP` en `main.c`).
+- ⏳ Matemática de color, optimizar la velocidad. El audio (SPC700) probablemente se omitirá (hay una APU falsa que responde a los juegos para que no se cuelguen).
 
 Ahora mismo el programa de la calculadora ejecuta un autotest (CPU + mapa LoROM) y abre un menú:
 
@@ -37,7 +38,7 @@ Envía `bin/SNESCE.8xp` a la calculadora con TI Connect CE o TILP y ejecútalo d
 ## Tests en PC
 
 ```sh
-make -C tests          # tests propios, rápidos, sin dependencias (CPU, memoria y PPU)
+make -C tests          # tests propios, rápidos, sin dependencias (CPU, memoria, PPU, HDMA y bucle)
 make -C tests/joypad   # tests del mando
 make -C tests demos    # guarda las escenas de la PPU en tests/out/modoN.ppm
 make -C tests sst      # batería SingleStepTests completa (descarga ~2 GB por partes)
@@ -56,9 +57,10 @@ calculadora. El formato está descrito en [docs/formato-appvars.md](docs/formato
 
 ```
 src/
-  main.c        Punto de entrada: autotest, menú y bucle principal (CPU+PPU+mando)
+  main.c        Punto de entrada: autotest, menú y pantalla de juego
+  emu.c         Bucle principal: CPU + memoria (DMA/HDMA) + PPU + mando por líneas
   bus.h         Interfaz del bus de 24 bits que usa la CPU
-  mem/mem.c     Mapa de memoria SNES (bus_read/bus_write, E/S, DMA)
+  mem/mem.c     Mapa de memoria SNES (bus_read/bus_write, E/S, DMA y HDMA)
   mem/cart.c    Detección de la cabecera (LoROM/HiROM/ExHiROM)
   mem/rom_ce.c  Carga de la ROM desde AppVars y reparto de la WRAM en la CE
   demo_rom.h    Programa de autotest de la CPU
@@ -73,6 +75,7 @@ tests/
   test_cpu.c    Tests de la CPU en PC
   test_mem.c    Tests del mapa de memoria en PC
   test_ppu.c    Tests de la PPU en PC (registros y píxeles conocidos)
+  test_emu.c    Tests del HDMA y del bucle principal en PC
   sst/          Ejecutor de la batería SingleStepTests
   joypad/       Tests del mando en el PC (`make -C tests/joypad`)
 tools/rom-converter.html  Conversor de ROMs a AppVars (HTML, en local)
@@ -105,7 +108,7 @@ El mapa de memoria envía a `joypad_read`/`joypad_write` las direcciones `$4016`
 2. ~~Mapa de memoria (LoROM/HiROM) leyendo la ROM desde AppVars en Flash~~ ✅
 3. ~~PPU (modos 0-7, sprites)~~ ✅ (falta optimizar, ver abajo)
 4. ~~Entrada con `keypadc`~~ ✅ (ver Controles)
-5. Unir todo en el bucle principal ✅; falta HDMA y medir/optimizar la velocidad.
+5. ~~Unir todo en el bucle principal, con HDMA~~ ✅; falta medir/optimizar la velocidad.
 5. Audio: probablemente omitido (la calculadora no tiene salida de sonido).
 
 ## PPU
