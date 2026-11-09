@@ -22,5 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tests de la CPU y del mapa de memoria en PC
+      - name: Tests de CPU, mapa de memoria y PPU en PC
         run: make -C tests
+      - name: Tests del mando en PC
+        run: make -C tests/joypad

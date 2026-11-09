@@ -47,7 +47,7 @@ make -C tests sst OPS="a9 69"   # solo algunos opcodes
 
 ```
 src/
-  main.c        Punto de entrada: ejecuta el autotest y muestra resultados
+  main.c        Punto de entrada: autotest, menú y bucle principal (CPU+PPU+mando)
   bus.h         Interfaz del bus de 24 bits que usa la CPU
   mem/mem.c     Mapa de memoria SNES (bus_read/bus_write, E/S, DMA)
   mem/cart.c    Detección de la cabecera (LoROM/HiROM/ExHiROM)
@@ -58,20 +58,43 @@ src/
   ppu/ppu.c     PPU: registros, VRAM/CGRAM/OAM y render por líneas (modos 0-7)
   ppu/ppu.h     Interfaz con el bus y el bucle de fotograma
   ppu/ppu_demo.c Escenas de prueba de cada modo (gráficos generados por código)
+  input/joypad.c  Mando SNES: teclado -> registros $4016/$4017 y $4218-$421F
+  input/joypad.h
 tests/
   test_cpu.c    Tests de la CPU en PC
   test_mem.c    Tests del mapa de memoria en PC
   test_ppu.c    Tests de la PPU en PC (registros y píxeles conocidos)
   sst/          Ejecutor de la batería SingleStepTests
+  joypad/       Tests del mando en el PC (`make -C tests/joypad`)
 makefile        Configuración del CE C Toolchain
 ```
+
+## Controles
+
+| SNES | Calculadora |
+|------|-------------|
+| Cruceta | flechas |
+| Y | `[2nd]` |
+| X | `[mode]` |
+| B | `[alpha]` |
+| A | `[X,T,θ,n]` |
+| L | `[y=]` |
+| R | `[graph]` |
+| Select | `[+]` |
+| Start | `[enter]` |
+| Salir del emulador | `[clear]` |
+
+Y, X, B y A ocupan el bloque 2×2 a la izquierda de las flechas con la misma posición relativa que en el mando de la SNES (Y/X arriba, B/A abajo; Y/B a la izquierda, X/A a la derecha), así se juega con el pulgar izquierdo en los botones y el derecho en la cruceta, o al revés. L y R están en las teclas de los extremos de la fila superior. Pulsar dos direcciones opuestas a la vez se ignora, como en una cruceta real. La tabla está en `src/input/joypad.c` (`key_map`) y se puede cambiar fácilmente.
+
+El mapa de memoria envía a `joypad_read`/`joypad_write` las direcciones `$4016`, `$4017` y `$4218-$421F`; el bucle principal llama a `joypad_poll()` al empezar cada VBlank y `mem_vblank_start()` hace la lectura automática cuando `$4200` bit 0 está activo. Solo se emula el mando 1; los mandos 2-4 se leen como desconectados.
 
 ## Hoja de ruta
 
 1. ~~Núcleo CPU 65C816~~ ✅
 2. ~~Mapa de memoria (LoROM/HiROM) leyendo la ROM desde AppVars en Flash~~ ✅
 3. ~~PPU (modos 0-7, sprites)~~ ✅ (falta optimizar, ver abajo)
-4. Entrada con `keypadc`.
+4. ~~Entrada con `keypadc`~~ ✅ (ver Controles)
+5. Unir todo en el bucle principal ✅; falta HDMA y medir/optimizar la velocidad.
 5. Audio: probablemente omitido (la calculadora no tiene salida de sonido).
 
 ## PPU
