@@ -5,6 +5,7 @@
  *   [clear] = volver al menú.
  */
 #include "wawas.h"
+#include "sprites.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -111,7 +112,8 @@ static void aim(int fx, int fy, int tx, int ty, int speed, int *vx, int *vy) {
 result_t mg_click(void) {
     obj_t w[6];
     int cx = 160, cy = 130, clicked = 0, i;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
     const int goal = 35;
 
     cursor_hold = 0;
@@ -153,12 +155,10 @@ result_t mg_click(void) {
         if (clicked >= goal) return RES_WIN;
         if (--t <= 0) return RES_LOSE;
 
-        gfx_FillScreen(C_SKY);
-        gfx_SetColor(C_GREEN);
-        gfx_FillRectangle(0, 200, SCR_W, 40);
+        gfx_FillScreen(C_WHITE);
         for (i = 0; i < 6; i++) draw_obj_wawa24(&w[i]);
         draw_cursor_arrow(cx, cy);
-        hud_draw("wawas: ", clicked, goal, t, SEC(30), 0, 0);
+        hud_draw("wawas: ", clicked, goal, t, tt, 0, 0);
         frame_end();
     }
 }
@@ -169,7 +169,8 @@ result_t mg_click(void) {
 result_t mg_spike(void) {
     obj_t w[8];
     int px = 152, py = 120, i, left = 8;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
 
     for (i = 0; i < 8; i++) {
         w[i].x = FX(rnd(0, SCR_W - 16));
@@ -201,7 +202,7 @@ result_t mg_spike(void) {
         gfx_FillScreen(C_LBLUE);
         for (i = 0; i < 8; i++) draw_obj_wawa16(&w[i]);
         gfx_TransparentSprite(spr_spike, px, py);
-        hud_draw("wawas: ", 8 - left, 8, t, SEC(30), 0, 0);
+        hud_draw("wawas: ", 8 - left, 8, t, tt, 0, 0);
         frame_end();
     }
 }
@@ -214,7 +215,8 @@ result_t mg_shoot(void) {
     obj_t w[6];
     obj_t b[MAX_BULLETS];
     int cx = 160, cy = 100, i, j, left = 6;
-    int t = SEC(20);
+    const int tt = time_limit(20);
+    int t = tt;
     const int gx = 160, gy = 230;
 
     cursor_hold = 0;
@@ -291,7 +293,7 @@ result_t mg_shoot(void) {
             gfx_FillCircle(gx, gy + 4, 7);
         }
         draw_crosshair(cx, cy);
-        hud_draw("wawas: ", 6 - left, 6, t, SEC(20), 0, 0);
+        hud_draw("wawas: ", 6 - left, 6, t, tt, 0, 0);
         frame_end();
     }
 }
@@ -304,7 +306,8 @@ result_t mg_space(void) {
     static uint16_t sx[40];
     static uint8_t sy[40];
     int x = FX(150), y = FX(120), vx = 0, vy = 0, i, left = 6;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
     const int maxv = FX(4);
 
     for (i = 0; i < 40; i++) {
@@ -366,11 +369,8 @@ result_t mg_space(void) {
         gfx_FillCircle(250, 180, 6);
         gfx_FillCircle(272, 200, 4);
         for (i = 0; i < 6; i++) draw_obj_wawa16(&w[i]);
-        /* casco de astronauta */
-        gfx_SetColor(C_LBLUE);
-        gfx_Circle(PX(x) + 7, PX(y) + 6, 8);
         gfx_TransparentSprite(spr_player, PX(x), PX(y));
-        hud_draw("wawas: ", 6 - left, 6, t, SEC(30), 0, 0);
+        hud_draw("wawas: ", 6 - left, 6, t, tt, 0, 0);
         frame_end();
     }
 }
@@ -381,7 +381,8 @@ result_t mg_space(void) {
 result_t mg_catch(void) {
     obj_t w[8];
     int px = 150, i, caught = 0, spawn = 0;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
     const int goal = 15, py = 200;
 
     for (i = 0; i < 8; i++) { w[i].alive = false; w[i].dead = 0; }
@@ -432,7 +433,7 @@ result_t mg_catch(void) {
         gfx_FillRectangle(px, py + 6, 32, 10);
         gfx_SetColor(C_BROWN);
         gfx_FillRectangle(px + 2, py + 8, 28, 6);
-        hud_draw("atrapados: ", caught, goal, t, SEC(30), 0, 0);
+        hud_draw("atrapados: ", caught, goal, t, tt, 0, 0);
         frame_end();
     }
 }
@@ -557,8 +558,8 @@ static result_t revenge(int total, int ntypes, bool boss) {
             if (!boss_on && bhp == 0) {
                 boss_on = true;
                 bhp = bmax;
-                bx = FX(136);
-                by = FX(HUD_H - 48);
+                bx = FX((SCR_W - PETRO_W) / 2);
+                by = FX(HUD_H - PETRO_H);
                 bstate = 0;
                 btimer = SEC(2);
             }
@@ -569,7 +570,7 @@ static result_t revenge(int total, int ntypes, bool boss) {
             if (bhit) bhit--;
             switch (bstate) {
                 case 0:  /* entrada y persecución lenta */
-                    aim(bpx + 24, bpy + 24, px + 7, py + 9, 150, &bvx, &bvy);
+                    aim(bpx + PETRO_W / 2, bpy + PETRO_H / 2, px + 7, py + 9, 150, &bvx, &bvy);
                     if (--btimer <= 0) { bstate = 1; btimer = 20; }
                     break;
                 case 1:  /* aviso: tiembla antes de embestir */
@@ -578,7 +579,7 @@ static result_t revenge(int total, int ntypes, bool boss) {
                     if (--btimer <= 0) {
                         bstate = 2;
                         btimer = 22;
-                        aim(bpx + 24, bpy + 24, px + 7, py + 9, FX(5) + (bmax - bhp) * 16, &bvx, &bvy);
+                        aim(bpx + PETRO_W / 2, bpy + PETRO_H / 2, px + 7, py + 9, FX(5) + (bmax - bhp) * 16, &bvx, &bvy);
                     }
                     break;
                 default: /* embestida */
@@ -587,16 +588,16 @@ static result_t revenge(int total, int ntypes, bool boss) {
             }
             bx += bvx;
             by += bvy;
-            bx = clampi(bx, FX(-8), FX(SCR_W - 40));
-            by = clampi(by, FX(HUD_H - 48), FX(SCR_H - 40));
+            bx = clampi(bx, 0, FX(SCR_W - PETRO_W));
+            by = clampi(by, FX(HUD_H - PETRO_H), FX(SCR_H - PETRO_H));
             bpx = PX(bx);
             bpy = PX(by);
 
-            if (atk && !bhit && overlap(ax, ay, aw, ah, bpx + 6, bpy + 6, 36, 36)) {
+            if (atk && !bhit && overlap(ax, ay, aw, ah, bpx + 2, bpy + 4, PETRO_W - 4, PETRO_H - 8)) {
                 bhit = 10;
                 if (--bhp <= 0) return RES_WIN;
             }
-            if (!inv && overlap(px + 2, py + 2, 10, 14, bpx + 6, bpy + 8, 36, 36)) {
+            if (!inv && overlap(px + 2, py + 2, 10, 14, bpx + 4, bpy + 8, PETRO_W - 8, PETRO_H - 12)) {
                 hearts--;
                 inv = IFRAMES;
             }
@@ -649,7 +650,8 @@ result_t mg_redwawas(void) {
     const int sx = 6, sy = 214;          /* salida */
     const int fx = 292, fy = HUD_H + 6;  /* bandera */
     int px = sx, py = sy, hearts = 3, inv = 0, i;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
 
     for (i = 0; i < 9; i++) {
         r[i].type = W_RED;
@@ -687,8 +689,8 @@ result_t mg_redwawas(void) {
         if (overlap(px, py, 14, 18, fx, fy, 20, 24)) return RES_WIN;
         if (--t <= 0) return RES_LOSE;
 
-        gfx_FillScreen(C_GREEN);
-        gfx_SetColor(C_DGREEN);
+        gfx_FillScreen(C_WHITE);
+        gfx_SetColor(C_LGREY);
         gfx_FillRectangle(0, 206, 30, 34);   /* zona de salida */
         /* bandera */
         gfx_SetColor(C_DGREY);
@@ -698,7 +700,7 @@ result_t mg_redwawas(void) {
         gfx_FillTriangle(fx + 4, fy, fx + 4, fy + 10, fx + 18, fy + 5);
         for (i = 0; i < 9; i++) draw_obj_wawa16(&r[i]);
         if (!(inv & 2)) gfx_TransparentSprite(spr_player, px, py);
-        hud_draw("ve a la bandera", 0, -1, t, SEC(30), hearts, 3);
+        hud_draw("ve a la bandera", 0, -1, t, tt, hearts, 3);
         if (inv > IFRAMES - 4) hud_flash_damage();
         frame_end();
     }
@@ -857,7 +859,8 @@ result_t mg_gameboy(void) {
     };
     int x = FX(150), y = FX(200), vy = 0, i, left = 6;
     bool ground = false;
-    int t = SEC(30);
+    const int tt = time_limit(30);
+    int t = tt;
 
     for (i = 0; i < 6; i++) {
         w[i].x = FX(wpos[i][0]);
@@ -918,12 +921,9 @@ result_t mg_gameboy(void) {
         }
         /* jugador en tonos Game Boy */
         gfx_SetColor(C_GB0);
-        gfx_FillRectangle(PX(x) + 2, PX(y), 10, 18);
-        gfx_SetColor(C_GB2);
-        gfx_FillRectangle(PX(x) + 4, PX(y) + 3, 6, 5);
-        gfx_SetColor(C_GB0);
-        gfx_SetPixel(PX(x) + 5, PX(y) + 5);
-        gfx_SetPixel(PX(x) + 8, PX(y) + 5);
+        gfx_FillRectangle(PX(x), PX(y) + 4, 14, 14);
+        gfx_SetColor(C_GB1);
+        gfx_FillRectangle(PX(x) + 2, PX(y) + 6, 10, 10);
         /* HUD en verde */
         gfx_SetColor(C_GB0);
         gfx_FillRectangle(0, 0, SCR_W, HUD_H);
@@ -935,7 +935,7 @@ result_t mg_gameboy(void) {
         gfx_SetColor(C_GB1);
         gfx_FillRectangle(230, 4, 62, 8);
         gfx_SetColor(C_GB3);
-        gfx_FillRectangle(231, 5, t * 60 / SEC(30), 6);
+        gfx_FillRectangle(231, 5, t * 60 / tt, 6);
         gfx_SetTextXY(296, 4);
         gfx_PrintInt((t + FPS - 1) / FPS, 2);
         frame_end();

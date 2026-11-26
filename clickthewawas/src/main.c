@@ -1,13 +1,13 @@
 /*
- * click the wawas - port para TI-84 Plus CE (modo clásico)
+ * click the wawas - port para TI-84 Plus CE (modos clásico y endless)
  *
  * Juego original: "click the wawas" de aidenkp11 (Scratch / TurboWarp,
  * Game Jolt). Este es un port no oficial hecho por fans, con el permiso
- * que el autor da para hacer remixes y ports. Todos los gráficos están
- * redibujados con primitivas; no se usa ningún recurso del juego original.
+ * que el autor da para hacer remixes y ports.
  */
 #include "wawas.h"
 
+#include <fileioc.h>
 #include <keypadc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +63,18 @@ static void shadow_text(const char *s, int dx, int y, uint8_t scale, uint8_t col
 }
 
 /* ---------------- Aviso antes de cada minijuego ---------------- */
-static bool prompt(int idx, int stage) {
+/* Número en texto (sin sprintf) */
+static void num_str(char *buf, int n) {
+    char tmp[8];
+    int i = 0, j = 0;
+    if (n == 0) tmp[i++] = '0';
+    while (n > 0 && i < 7) { tmp[i++] = (char)('0' + n % 10); n /= 10; }
+    while (i) buf[j++] = tmp[--i];
+    buf[j] = '\0';
+}
+
+/* header: "STAGE 3 / 12" o "RONDA 5"; lives >= 0 dibuja las vidas (endless) */
+static bool prompt(int idx, const char *header, int lives) {
     int t = 0;
     wait_release();
     for (;;) {
@@ -78,21 +89,10 @@ static bool prompt(int idx, int stage) {
         gfx_SetColor(C_LGREY);
         gfx_Rectangle(24, 40, 272, 164);
 
-        if (stage >= 0) {
-            char buf[24];
-            strcpy(buf, "STAGE ");
-            if (stage + 1 >= 10) {
-                buf[6] = '1';
-                buf[7] = (char)('0' + (stage + 1) % 10);
-                buf[8] = '\0';
-            } else {
-                buf[6] = (char)('1' + stage);
-                buf[7] = '\0';
-            }
-            strcat(buf, " / 12");
-            text_center(buf, 48, 1, C_YELLOW);
-        } else {
-            text_center("MINIJUEGO", 48, 1, C_YELLOW);
+        text_center(header, 48, 1, C_YELLOW);
+        if (lives >= 0) {
+            int i;
+            for (i = 0; i < 3; i++) draw_heart(250 + i * 14, 46, i < lives);
         }
 
         draw_wrapped(minigames[idx].prompt, 70, 256, 2, C_WHITE);
@@ -111,14 +111,15 @@ static bool prompt(int idx, int stage) {
 }
 
 /* ---------------- Game over (estática roja) ---------------- */
-static bool game_over(void) {
+/* score < 0: modo clásico (se puede reintentar). Si no, fin del endless. */
+static bool game_over(int score, int best) {
     int t = 0, i;
     wait_release();
     for (;;) {
         input_read();
         t++;
         if (t > SEC(1)) {
-            if (in.ok_p) return true;
+            if (in.ok_p) return score < 0;
             if (in.quit_p) return false;
         }
 
@@ -131,8 +132,19 @@ static bool game_over(void) {
             int dx = rnd(-5, 5);
             shadow_text("GAME OVER", dx, 100, 4, C_RED);
         }
+        if (score >= 0) {
+            char buf[32], n[8];
+            strcpy(buf, "puntos: ");
+            num_str(n, score);
+            strcat(buf, n);
+            strcat(buf, "   record: ");
+            num_str(n, best);
+            strcat(buf, n);
+            text_center(buf, 150, 1, C_WHITE);
+            if (score >= best && score > 0) text_center("nuevo record!", 166, 1, C_YELLOW);
+        }
         if (t > SEC(1))
-            text_center("[enter] reintentar    [clear] menu", 200, 1, C_WHITE);
+            text_center(score >= 0 ? "[enter] menu" : "[enter] reintentar    [clear] menu", 200, 1, C_WHITE);
         frame_end();
     }
 }
@@ -201,62 +213,111 @@ static void ending(void) {
     }
 }
 
-/* ---------------- Jugar un minijuego (con reintentos) ---------------- */
+/* ---------------- Modo clásico ---------------- */
 /* Devuelve true si se superó, false si el jugador volvió al menú */
-static bool run_minigame(int idx, int stage) {
+static bool run_stage(int stage) {
+    char header[16], n[8];
+    strcpy(header, "STAGE ");
+    num_str(n, stage + 1);
+    strcat(header, n);
+    strcat(header, " / 12");
     for (;;) {
         result_t r;
-        if (!prompt(idx, stage)) return false;
+        if (!prompt(stage, header, -1)) return false;
         wait_release();
-        r = minigames[idx].play();
+        r = minigames[stage].play();
         if (r == RES_QUIT) return false;
         if (r == RES_WIN) {
             stage_clear();
             return true;
         }
-        if (!game_over()) return false;
+        if (!game_over(-1, 0)) return false;
     }
 }
 
 static void classic_mode(void) {
     int s;
+    g_endless_round = 0;
     for (s = 0; s < NUM_STAGES; s++)
-        if (!run_minigame(s, s)) return;
+        if (!run_stage(s)) return;
     ending();
 }
 
-/* ---------------- Menú de minijuegos (práctica) ---------------- */
-static void minigame_menu(void) {
-    int sel = 0, i;
-    wait_release();
-    for (;;) {
-        input_read();
-        if (in.quit_p) return;
-        if (in.up_p) sel = (sel + NUM_STAGES - 1) % NUM_STAGES;
-        if (in.down_p) sel = (sel + 1) % NUM_STAGES;
-        if (in.ok_p) {
-            run_minigame(sel, -1);
-            wait_release();
-        }
+/* ---------------- Modo endless ---------------- */
+/* Minijuegos al azar hasta perder las 3 vidas. Cada ronda hay menos tiempo.
+ * "revenge part two" no sale, igual que en el original. */
+static const char save_name[] = "WAWASAV";
 
-        gfx_FillScreen(C_DBLUE);
-        text_center("MINIJUEGOS", 6, 2, C_YELLOW);
-        for (i = 0; i < NUM_STAGES; i++) {
-            int y = 30 + i * 16;
-            if (i == sel) {
-                gfx_SetColor(C_BLUE);
-                gfx_FillRectangle(40, y - 3, 240, 14);
-                gfx_TransparentSprite(spr_wawa16[W_NORMAL], 20, y - 5);
-            }
-            gfx_SetTextXY(48, y);
-            gfx_SetTextFGColor(i == sel ? C_WHITE : C_LGREY);
-            gfx_PrintInt(i + 1, 2);
-            gfx_PrintString(". ");
-            gfx_PrintString(minigames[i].menu_name);
-        }
-        text_center("[2nd] jugar   [clear] volver", 228, 1, C_LGREY);
+static int load_best(void) {
+    int best = 0;
+    uint8_t h = ti_Open(save_name, "r");
+    if (h) {
+        ti_Read(&best, sizeof best, 1, h);
+        ti_Close(h);
+    }
+    return best;
+}
+
+static void save_best(int best) {
+    uint8_t h = ti_Open(save_name, "w");
+    if (h) {
+        ti_Write(&best, sizeof best, 1, h);
+        ti_SetArchiveStatus(true, h);
+        ti_Close(h);
+    }
+}
+
+static void lost_life(int lives) {
+    int t, i;
+    for (t = 0; t < 40; t++) {
+        input_read();
+        gfx_FillScreen(C_DRED);
+        text_center("fallaste!", 80, 3, C_WHITE);
+        for (i = 0; i < 3; i++)
+            draw_heart(136 + i * 18, 130, i < lives || (i == lives && (t & 4)));
         frame_end();
     }
+}
+
+static void endless_mode(void) {
+    int lives = 3, score = 0, round = 0, last = -1, idx, best;
+    char header[16], n[8];
+
+    for (;;) {
+        result_t r;
+        round++;
+        g_endless_round = round;
+        do {
+            idx = rnd(0, NUM_STAGES - 2);
+        } while (idx == last);
+        last = idx;
+
+        strcpy(header, "RONDA ");
+        num_str(n, round);
+        strcat(header, n);
+        if (!prompt(idx, header, lives)) break;
+        wait_release();
+        r = minigames[idx].play();
+        if (r == RES_QUIT) break;
+        if (r == RES_WIN) {
+            score++;
+            stage_clear();
+            continue;
+        }
+        lives--;
+        if (lives > 0) {
+            lost_life(lives);
+            continue;
+        }
+        best = load_best();
+        if (score > best) {
+            best = score;
+            save_best(best);
+        }
+        game_over(score, best);
+        break;
+    }
+    g_endless_round = 0;
 }
 
 /* ---------------- Créditos ---------------- */
@@ -287,11 +348,18 @@ static void credits(void) {
 
 /* ---------------- Pantalla de título ---------------- */
 #define TITLE_WAWAS 8
-static const char *menu_items[] = {"JUGAR (modo clasico)", "MINIJUEGOS", "CREDITOS", "SALIR"};
+static const char *main_items[] = {"JUGAR", "CREDITOS", "SALIR"};
+static const char *play_items[] = {"MODO CLASICO", "MODO ENDLESS", "VOLVER"};
+static const char *play_desc[] = {
+    "El modo original. 12 stages.",
+    "Aguanta todo lo que puedas!",
+    "",
+};
 
 int main(void) {
     int bx[TITLE_WAWAS], by[TITLE_WAWAS], bvx[TITLE_WAWAS], bvy[TITLE_WAWAS];
     int sel = 0, i, t = 0, boing = 0;
+    bool play_menu = false;
 
     srand((unsigned)rtc_Time());
     gfx_Begin();
@@ -306,15 +374,27 @@ int main(void) {
 
     wait_release();
     for (;;) {
+        const char **items = play_menu ? play_items : main_items;
+        int nitems = 3;
+
         input_read();
-        if (in.quit_p) break;
-        if (in.up_p) { sel = (sel + 3) % 4; boing = 6; }
-        if (in.down_p) { sel = (sel + 1) % 4; boing = 6; }
+        if (in.quit_p) {
+            if (!play_menu) break;
+            play_menu = false;
+            sel = 0;
+        }
+        if (in.up_p) { sel = (sel + nitems - 1) % nitems; boing = 6; }
+        if (in.down_p) { sel = (sel + 1) % nitems; boing = 6; }
         if (in.ok_p) {
-            if (sel == 0) classic_mode();
-            else if (sel == 1) minigame_menu();
-            else if (sel == 2) credits();
-            else break;
+            if (play_menu) {
+                if (sel == 0) classic_mode();
+                else if (sel == 1) endless_mode();
+                else { play_menu = false; sel = 0; }
+            } else {
+                if (sel == 0) { play_menu = true; sel = 0; }
+                else if (sel == 1) credits();
+                else break;
+            }
             wait_release();
         }
         t++;
@@ -327,29 +407,30 @@ int main(void) {
             if (by[i] < 0 || by[i] > (SCR_H - 16) << 4) bvy[i] = -bvy[i];
         }
 
-        gfx_FillScreen(C_SKY);
+        gfx_FillScreen(C_WHITE);
         for (i = 0; i < TITLE_WAWAS; i++)
             gfx_TransparentSprite(spr_wawa16[W_NORMAL], bx[i] >> 4, by[i] >> 4);
 
-        shadow_text("click the", 0, 8, 3, C_WHITE);
+        shadow_text("click the", 0, 8, 3, C_BLUE);
         shadow_text("wawas", 0, 36, 4, C_YELLOW);
 
         gfx_TransparentSprite(spr_wawa_big, 128, 72 - (boing ? 4 : 0) + ((t / 15) & 1));
 
         gfx_SetColor(C_BLACK);
-        gfx_FillRectangle(70, 140, 180, 74);
-        gfx_SetColor(C_WHITE);
-        gfx_Rectangle(70, 140, 180, 74);
-        for (i = 0; i < 4; i++) {
+        gfx_FillRectangle(70, 140, 180, 58);
+        gfx_SetColor(C_GREY);
+        gfx_Rectangle(70, 140, 180, 58);
+        for (i = 0; i < nitems; i++) {
             int y = 147 + i * 17;
             if (i == sel) {
                 gfx_SetColor(C_DGREY);
                 gfx_FillRectangle(72, y - 3, 176, 14);
                 text_at(">", 78, y, C_YELLOW);
             }
-            text_center(menu_items[i], y, 1, i == sel ? C_YELLOW : C_WHITE);
+            text_center(items[i], y, 1, i == sel ? C_YELLOW : C_WHITE);
         }
-        text_center("original: aidenkp11 - port fan", 226, 1, C_DBLUE);
+        if (play_menu) text_center(play_desc[sel], 206, 1, C_BLACK);
+        text_center("original: aidenkp11 - port fan", 226, 1, C_GREY);
         frame_end();
     }
 

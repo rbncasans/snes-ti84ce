@@ -1,9 +1,10 @@
 /*
  * Gráficos, entrada y utilidades comunes.
- * Todos los sprites se dibujan en tiempo de ejecución con primitivas,
- * así el programa no necesita convertir imágenes.
+ * Los wawas y Petrovich salen de imágenes (src/sprites.c, generado por
+ * tools/make_sprites.py); el resto se dibuja con primitivas.
  */
 #include "wawas.h"
+#include "sprites.h"
 
 #include <keypadc.h>
 #include <stdlib.h>
@@ -56,59 +57,17 @@ static const uint8_t pal_rgb[C_NUM][3] = {
     { 25,  45, 120}, /* C_DBLUE */
 };
 
-static const uint8_t wawa_colors[W_NUM][3] = {
-    /* cuerpo, mancha, ojos */
-    {C_WHITE,  C_BROWN,  C_EYE},
-    {C_RED,    C_DRED,   C_YELLOW},
-    {C_LBLUE,  C_BLUE,   C_DBLUE},
-    {C_GREEN,  C_DGREEN, C_YELLOW},
-    {C_YELLOW, C_ORANGE, C_BLUE},
-    {C_PINK,   C_PURPLE, C_EYE},
-    {C_GB3,    C_GB1,    C_GB0},
+/* Sprites de las imágenes (generados por tools/make_sprites.py) */
+static const uint8_t *const wawa16_data[W_NUM] = {
+    spr_wawa16_normal_data, spr_wawa16_red_data, spr_wawa16_blue_data, spr_wawa16_green_data,
+    spr_wawa16_yellow_data, spr_wawa16_purple_data, spr_wawa16_gb_data,
+};
+static const uint8_t *const wawa24_data[W_NUM] = {
+    spr_wawa24_normal_data, spr_wawa24_red_data, spr_wawa24_blue_data, spr_wawa24_green_data,
+    spr_wawa24_yellow_data, spr_wawa24_purple_data, spr_wawa24_gb_data,
 };
 
-/* ---------------- Dibujo de personajes ---------------- */
-
-/* Un wawa: gato redondo sin orejas, blanco con una mancha marrón arriba,
- * ojos verdes, dos patitas y cara seria. */
-void draw_wawa_prim(int cx, int cy, int r, uint8_t body, uint8_t patch, uint8_t eye) {
-    int leg = r / 3 + 1;
-    int er = r / 5;
-
-    /* patas */
-    gfx_SetColor(C_BLACK);
-    gfx_FillRectangle(cx - r / 2 - leg / 2 - 1, cy + r - 3, leg + 2, leg + 3);
-    gfx_FillRectangle(cx + r / 2 - leg / 2 - 1, cy + r - 3, leg + 2, leg + 3);
-    gfx_SetColor(body);
-    gfx_FillRectangle(cx - r / 2 - leg / 2, cy + r - 3, leg, leg + 2);
-    gfx_FillRectangle(cx + r / 2 - leg / 2, cy + r - 3, leg, leg + 2);
-
-    /* cuerpo */
-    gfx_SetColor(C_BLACK);
-    gfx_FillCircle(cx, cy, r);
-    gfx_SetColor(body);
-    gfx_FillCircle(cx, cy, r - 1);
-
-    /* mancha de arriba */
-    gfx_SetColor(patch);
-    gfx_FillEllipse(cx, cy - r / 2, r / 2 + r / 4, r / 2);
-
-    /* ojos */
-    if (er < 1) er = 1;
-    gfx_SetColor(eye);
-    gfx_FillCircle(cx - (r * 2) / 5, cy + r / 5, er);
-    gfx_FillCircle(cx + (r * 2) / 5, cy + r / 5, er);
-    gfx_SetColor(C_BLACK);
-    gfx_SetPixel(cx - (r * 2) / 5, cy + r / 5);
-    gfx_SetPixel(cx + (r * 2) / 5, cy + r / 5);
-    if (r >= 10) {
-        gfx_FillRectangle(cx - (r * 2) / 5 - 1, cy + r / 5 - 1, 2, 2);
-        gfx_FillRectangle(cx + (r * 2) / 5 - 1, cy + r / 5 - 1, 2, 2);
-    }
-
-    /* boca seria */
-    gfx_HorizLine(cx - r / 6, cy + r / 2 + 1, r / 3 + 1);
-}
+/* ---------------- Sprites dibujados con primitivas ---------------- */
 
 static gfx_sprite_t *grab(int w, int h) {
     gfx_sprite_t *s = gfx_MallocSprite(w, h);
@@ -125,34 +84,13 @@ static void make_sprites(void) {
     int i;
 
     for (i = 0; i < W_NUM; i++) {
-        clear_area(16, 16);
-        draw_wawa_prim(8, 7, 7, wawa_colors[i][0], wawa_colors[i][1], wawa_colors[i][2]);
-        spr_wawa16[i] = grab(16, 16);
-
-        clear_area(24, 24);
-        draw_wawa_prim(12, 10, 10, wawa_colors[i][0], wawa_colors[i][1], wawa_colors[i][2]);
-        spr_wawa24[i] = grab(24, 24);
+        spr_wawa16[i] = (gfx_sprite_t *)wawa16_data[i];
+        spr_wawa24[i] = (gfx_sprite_t *)wawa24_data[i];
     }
-
-    /* wawa grande del título */
-    clear_area(64, 64);
-    draw_wawa_prim(32, 28, 27, C_WHITE, C_BROWN, C_EYE);
-    spr_wawa_big = grab(64, 64);
-
-    /* wawa muerto: rojo y aplastado */
-    clear_area(16, 16);
-    gfx_SetColor(C_DRED);
-    gfx_FillEllipse(8, 12, 7, 3);
-    gfx_SetColor(C_RED);
-    gfx_FillEllipse(8, 12, 6, 2);
-    spr_dead16 = grab(16, 16);
-
-    clear_area(24, 24);
-    gfx_SetColor(C_DRED);
-    gfx_FillEllipse(12, 19, 11, 4);
-    gfx_SetColor(C_RED);
-    gfx_FillEllipse(12, 19, 10, 3);
-    spr_dead24 = grab(24, 24);
+    spr_wawa_big = (gfx_sprite_t *)spr_wawa64_data;
+    spr_dead16 = (gfx_sprite_t *)spr_dead16_data;
+    spr_dead24 = (gfx_sprite_t *)spr_dead24_data;
+    spr_petro = (gfx_sprite_t *)spr_petro_data;
 
     /* perro (mirando a la derecha) */
     clear_area(24, 16);
@@ -173,63 +111,20 @@ static void make_sprites(void) {
     spr_dog_l = gfx_MallocSprite(24, 16);
     gfx_FlipSpriteY(spr_dog_r, spr_dog_l);
 
-    /* Petrovich: el jefe final (perro enorme y enfadado) */
-    clear_area(48, 48);
-    gfx_SetColor(C_DBROWN);
-    gfx_FillTriangle(4, 2, 16, 10, 6, 20);      /* orejas */
-    gfx_FillTriangle(43, 2, 31, 10, 41, 20);
-    gfx_SetColor(C_BLACK);
-    gfx_FillCircle(24, 26, 20);
-    gfx_SetColor(C_GREY);
-    gfx_FillCircle(24, 26, 19);
-    gfx_SetColor(C_TAN);
-    gfx_FillEllipse(24, 34, 11, 8);             /* hocico */
-    gfx_SetColor(C_RED);
-    gfx_FillCircle(16, 21, 3);                  /* ojos rojos */
-    gfx_FillCircle(32, 21, 3);
-    gfx_SetColor(C_BLACK);
-    gfx_Line(10, 14, 20, 18);                   /* cejas */
-    gfx_Line(38, 14, 28, 18);
-    gfx_FillEllipse(24, 30, 4, 2);              /* nariz */
-    gfx_HorizLine(16, 38, 17);                  /* boca */
-    gfx_SetColor(C_WHITE);
-    gfx_FillTriangle(18, 39, 21, 39, 19, 43);   /* colmillos */
-    gfx_FillTriangle(27, 39, 30, 39, 29, 43);
-    spr_petro = grab(48, 48);
-
-    /* jugador: chaval con gorra roja */
+    /* jugador: cuadrado azul con borde negro (14x14 dentro de 14x18) */
     clear_area(14, 18);
+    gfx_SetColor(C_BLACK);
+    gfx_FillRectangle(0, 2, 14, 14);
     gfx_SetColor(C_BLUE);
-    gfx_FillRectangle(3, 11, 8, 5);             /* camiseta */
-    gfx_SetColor(C_DBLUE);
-    gfx_FillRectangle(3, 16, 3, 2);             /* piernas */
-    gfx_FillRectangle(8, 16, 3, 2);
-    gfx_SetColor(C_BLACK);
-    gfx_FillCircle(7, 6, 5);
-    gfx_SetColor(C_YELLOW);
-    gfx_FillCircle(7, 6, 4);
-    gfx_SetColor(C_RED);
-    gfx_FillRectangle(2, 1, 10, 3);             /* gorra */
-    gfx_FillRectangle(9, 3, 5, 1);
-    gfx_SetColor(C_BLACK);
-    gfx_SetPixel(5, 6);
-    gfx_SetPixel(9, 6);
-    gfx_HorizLine(6, 8, 3);
+    gfx_FillRectangle(2, 4, 10, 10);
     spr_player = grab(14, 18);
 
-    /* bola de pinchos */
+    /* spike the wawas: triángulo blanco con borde negro */
     clear_area(16, 16);
-    gfx_SetColor(C_DGREY);
-    gfx_Line(0, 8, 15, 8);
-    gfx_Line(8, 0, 8, 15);
-    gfx_Line(2, 2, 13, 13);
-    gfx_Line(13, 2, 2, 13);
     gfx_SetColor(C_BLACK);
-    gfx_FillCircle(8, 8, 5);
-    gfx_SetColor(C_GREY);
-    gfx_FillCircle(8, 8, 4);
+    gfx_FillTriangle(8, 0, 0, 15, 15, 15);
     gfx_SetColor(C_WHITE);
-    gfx_SetPixel(6, 6);
+    gfx_FillTriangle(8, 4, 3, 13, 12, 13);
     spr_spike = grab(16, 16);
 
     /* cactus */
@@ -250,11 +145,13 @@ static void make_sprites(void) {
 }
 
 void gfx_setup(void) {
-    static uint16_t pal[C_NUM];
+    static uint16_t pal[256];
     int i;
 
     for (i = 0; i < C_NUM; i++)
         pal[i] = gfx_RGBTo1555(pal_rgb[i][0], pal_rgb[i][1], pal_rgb[i][2]);
+    for (i = 0; i < SPRITE_PAL_COUNT; i++)
+        pal[SPRITE_PAL_FIRST + i] = gfx_RGBTo1555(sprite_palette[i][0], sprite_palette[i][1], sprite_palette[i][2]);
     gfx_SetPalette(pal, sizeof pal, 0);
     gfx_SetTransparentColor(C_TRANS);
     gfx_SetTextTransparentColor(C_TRANS);
@@ -374,6 +271,19 @@ bool overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh) {
 
 int clampi(int v, int lo, int hi) {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* ---------------- Dificultad ---------------- */
+int g_endless_round;
+
+/* En endless cada ronda quita medio segundo, hasta un mínimo del 55 % */
+int time_limit(int secs) {
+    int full = SEC(secs);
+    int t;
+    if (g_endless_round <= 1) return full;
+    t = full - (g_endless_round - 1) * (FPS / 2);
+    if (t < full * 55 / 100) t = full * 55 / 100;
+    return t;
 }
 
 /* ---------------- HUD ---------------- */

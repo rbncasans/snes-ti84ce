@@ -1,6 +1,6 @@
 # click the wawas para TI-84 Plus CE
 
-Port no oficial, hecho por fans, del **modo clásico** de *click the wawas* para la TI-84 Plus CE / TI-84 Plus CE Python Edition.
+Port no oficial, hecho por fans, de *click the wawas* (modos **clásico** y **endless**) para la TI-84 Plus CE / TI-84 Plus CE Python Edition.
 
 ## Créditos
 
@@ -8,7 +8,7 @@ Port no oficial, hecho por fans, del **modo clásico** de *click the wawas* para
 - **Port para calculadora:** Rubén y Claude.
 - Información del juego sacada de la [wiki de click the wawas](https://click-the-wawas.fandom.com/wiki/Click_the_wawas_Wiki).
 
-Todos los gráficos están redibujados con primitivas de `graphx`: no se usa ninguna imagen ni sonido del juego original.
+Los wawas y Petrovich salen de las imágenes de `assets/` (las pasó Rubén); `tools/make_sprites.py` las convierte en `src/sprites.c`. El resto se dibuja con primitivas de `graphx`. Si cambias una imagen, vuelve a ejecutar `python3 tools/make_sprites.py` (necesita Pillow).
 
 ## Cómo jugar
 
@@ -21,8 +21,9 @@ Todos los gráficos están redibujados con primitivas de `graphx`: no se usa nin
 
 En el menú principal:
 
-- **JUGAR (modo clásico):** los 12 stages seguidos. Si pierdes sale el *GAME OVER* y puedes reintentar el stage o volver al menú.
-- **MINIJUEGOS:** juega cualquiera de los 12 minijuegos suelto para practicar.
+- **JUGAR**
+  - **Modo clásico:** los 12 stages seguidos. Si pierdes sale el *GAME OVER* y puedes reintentar el stage o volver al menú.
+  - **Modo endless:** minijuegos al azar con 3 vidas; cada ronda hay medio segundo menos (hasta el 55 % del tiempo). Al perder las 3 vidas se guarda el récord en la variable `WAWASAV`. *revenge part two* no sale, como en el original.
 - **CRÉDITOS**
 
 ## Los 12 stages

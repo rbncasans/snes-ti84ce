@@ -39,7 +39,6 @@ extern gfx_sprite_t *spr_cactus;
 extern gfx_sprite_t *spr_wawa_big;
 
 void gfx_setup(void);
-void draw_wawa_prim(int cx, int cy, int r, uint8_t body, uint8_t patch, uint8_t eye);
 void text_center(const char *s, int y, uint8_t scale, uint8_t color);
 void text_at(const char *s, int x, int y, uint8_t color);
 void draw_heart(int x, int y, bool full);
@@ -66,6 +65,10 @@ int rnd(int lo, int hi);        /* entero en [lo, hi] */
 int isqrt(int v);
 bool overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh);
 int clampi(int v, int lo, int hi);
+
+/* Modo endless: ronda actual (0 = modo clásico). Acorta los tiempos. */
+extern int g_endless_round;
+int time_limit(int secs);
 
 /* HUD común */
 void hud_draw(const char *label, int value, int goal, int frames_left, int total_frames, int hearts, int max_hearts);
