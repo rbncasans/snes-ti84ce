@@ -29,7 +29,7 @@ En el menú principal:
 ## Los 12 stages
 
 1. **click the wawas!!** – haz clic en 35 wawas en 30 segundos.
-2. **spike the wawas** – toca con la bola de pinchos a los 8 wawas que rebotan.
+2. **spike the wawas** – toca con el triángulo a los 8 wawas que rebotan.
 3. **shoot the wawa** – apunta con el cursor y dispara a los 6 wawas (20 s).
 4. **we r in space!!!** – flota con inercia por el espacio y toca a todos los wawas.
 5. **catch the wawas!!!** – atrapa 15 wawas que caen con la cesta.
