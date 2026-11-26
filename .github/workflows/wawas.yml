@@ -1,0 +1,30 @@
+name: Compilar click the wawas
+
+on:
+  push:
+    paths:
+      - 'clickthewawas/**'
+      - '.github/workflows/wawas.yml'
+  pull_request:
+    paths:
+      - 'clickthewawas/**'
+      - '.github/workflows/wawas.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clickthewawas
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar CE C Toolchain
+        run: |
+          curl -sL https://github.com/CE-Programming/toolchain/releases/latest/download/CEdev-Linux.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/CEdev/bin" >> $GITHUB_PATH
+      - name: Compilar
+        run: make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WAWAS
+          path: clickthewawas/bin/WAWAS.8xp
